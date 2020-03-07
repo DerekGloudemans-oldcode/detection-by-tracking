@@ -181,12 +181,13 @@ class Localize_Dataset(data.Dataset):
             new_corners = np.matmul(corners,M)
             
             # Resulting corners make a skewed, tilted rectangle - realign with axes
+            old_class = y[4]
             y = np.ones(5)
             y[0] = np.min(new_corners[:4,0])
             y[1] = np.min(new_corners[:4,1])
             y[2] = np.max(new_corners[:4,0])
             y[3] = np.max(new_corners[:4,1])
-            
+            y[4] = old_class
             # shift so transformed image center aligns with original image center
             xshift = xsize/2 - new_corners[4,0]
             yshift = ysize/2 - new_corners[4,1]
@@ -352,7 +353,7 @@ class Localize_Dataset(data.Dataset):
         #cv_im = plot_bboxes_2d(cv_im,label,metadata['ignored_regions'])
         cv2.rectangle(cv_im,(int(label[0]),int(label[1])),(int(label[2]),int(label[3])),(255,0,0),2)    
     
-        cv2.imshow("Frame",cv_im)
+        cv2.imshow("Class: {}".format(label[4]),cv_im)
         cv2.waitKey(0) 
         cv2.destroyAllWindows()
         
