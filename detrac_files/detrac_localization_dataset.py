@@ -49,7 +49,20 @@ class Localize_Dataset(data.Dataset):
         track_list.sort()
         label_list.sort()
         
-        self.im_tf = transforms.ToTensor()
+        self.im_tf = transforms.Compose([
+                transforms.RandomApply([
+                    transforms.ColorJitter(brightness = 0.2,contrast = 0.2,saturation = 0.1)
+                        ]),
+                transforms.ToTensor(),
+                transforms.RandomErasing(p=0.25, scale=(0.02, 0.33), ratio=(0.3, 3.3), value=(0.485,0.456,0.406)),
+                transforms.RandomErasing(p=0.2, scale=(0.02, 0.5), ratio=(0.3, 3.3), value=(0.485,0.456,0.406)),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
+                ])
+
+        # for denormalizing
+        self.denorm = transforms.Normalize(mean = [-0.485/0.229, -0.456/0.224, -0.406/0.225],
+                                           std = [1/0.229, 1/0.224, 1/0.225])
         
         # for storing data
         self.all_data = []
@@ -102,7 +115,7 @@ class Localize_Dataset(data.Dataset):
         # copy so that original coordinates aren't overwritten
         bbox = label["bbox"].copy()
         
-        buffer = max(0,np.random.normal(20,10))
+        buffer = max(0,np.random.normal(40,10))
         # note may have indexed these wrongly
         minx = max(0,bbox[0]-buffer)
         miny = max(0,bbox[1]-buffer)
@@ -117,21 +130,22 @@ class Localize_Dataset(data.Dataset):
         bbox[2] = bbox[2] - minx
         bbox[3] = bbox[3] - miny
                 
+        #im_crop= im
+       
         # apply random affine transformation
         y = np.zeros(5)
         y[0:4] = bbox
         y[4] = label["class_num"]
         
-        plt.imshow(im_crop)
-        #im,y = self.random_affine_crop(im,y)
+        im_crop,y = self.random_affine_crop(im_crop,y)
         # convert image and label to tensors
         im_t = self.im_tf(im_crop)
-        
+        print (im_t.shape)
         return im_t, y
     
     
     
-    def random_affine_crop(self,im,y,imsize = 224,tighten = 0.0,max_scaling = 1.5):
+    def random_affine_crop(self,im,y,imsize = 224,tighten = 0.02,max_scaling = 1.5):
         """
         Performs transforms that affect both X and y, as the transforms package 
         of torchvision doesn't do this elegantly
@@ -145,7 +159,7 @@ class Localize_Dataset(data.Dataset):
         #define parameters for random transform
         scale = min(max_scaling,max(random.gauss(0.5,1),imsize/min(im.size))) # verfify that scale will at least accomodate crop size
         shear = 0# (random.random()-0.5)*30 #angle
-        rotation = (random.random()-0.5) * 60.0 #angle
+        rotation = (random.random()-0.5) * 30 #angle
         
         # transform matrix
         im = transforms.functional.affine(im,rotation,(0,0),scale,shear)
@@ -206,12 +220,15 @@ class Localize_Dataset(data.Dataset):
             crop_y = im.size[0]/2 - imsize/2 # center  
         im = transforms.functional.crop(im,crop_y,crop_x,imsize,imsize)
         
+        # This is done to get a uniform scale and good pixel fill 
+#        im = transforms.functional.resize(im,224)
+#        y[0:4] = y[0:4] * 224/imsize
+        
         # transform bbox points into cropped coords
-        if y[4] == 1:
-            y[0] = y[0] - crop_x
-            y[1] = y[1] - crop_y
-            y[2] = y[2] - crop_x
-            y[3] = y[3] - crop_y
+        y[0] = y[0] - crop_x
+        y[1] = y[1] - crop_y
+        y[2] = y[2] - crop_x
+        y[3] = y[3] - crop_y
         
         return im,y
 
@@ -316,10 +333,15 @@ class Localize_Dataset(data.Dataset):
             SHOW_LABELS - if True, labels are plotted on sequence
             track_idx - int    
         """
-
+        mean = np.array([0.485, 0.456, 0.406])
+        stddev = np.array([0.229, 0.224, 0.225])
+        
         im,label = self[index]
         
+        im = self.denorm(im)
         cv_im = np.array(im) 
+        cv_im = np.clip(cv_im, 0, 1)
+        
         # Convert RGB to BGR 
         cv_im = cv_im[::-1, :, :]         
         
