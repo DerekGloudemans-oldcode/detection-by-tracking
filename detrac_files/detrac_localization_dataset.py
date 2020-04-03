@@ -74,11 +74,11 @@ class Localize_Dataset(data.Dataset):
         # parse and store all labels and image names in a list such that
         # all_data[i] returns dict with image name, label and other stats
         # track_offsets[i] retuns index of first frame of track[i[]]
-        for i in range(0,len(track_list)):
+        for i in range(0,1):#len(track_list)):
 
             images = [os.path.join(track_list[i],frame) for frame in os.listdir(track_list[i])]
             images.sort() 
-            labels,metadata = label_list[track_list[i].split("/")[-1]]
+            labels,metadata = label_list[track_list[i].split("\\")[-1]]
             
             # each iteration of the loop gets one image
             for j in range(len(images)):
@@ -364,15 +364,15 @@ class Localize_Dataset(data.Dataset):
 
 if __name__ == "__main__":
     #### Test script here
-    try:
-        label_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\DETRAC-Train-Annotations-XML-v3"
-        image_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\Tracks"
-        test = Localize_Dataset(image_dir,label_dir)
+    #try:
+    label_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\DETRAC-Train-Annotations-XML-v3"
+    image_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\Tracks"
+    test = Localize_Dataset(image_dir,label_dir)
 
-    except:
-        label_dir = "/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3"
-        image_dir = "/home/worklab/Desktop/detrac/DETRAC-train-data"
-        test = Localize_Dataset(image_dir,label_dir)
+    #except:
+    #label_dir = "/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3"
+    #image_dir = "/home/worklab/Desktop/detrac/DETRAC-train-data"
+    #test = Localize_Dataset(image_dir,label_dir)
     idx = np.random.randint(0,len(test))
     test.show(idx)
     test.show(idx)

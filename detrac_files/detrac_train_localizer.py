@@ -130,10 +130,19 @@ def train_model(model, optimizer, scheduler,losses,
                     with torch.set_grad_enabled(phase == 'train'):
                         cls_out,reg_out = model(inputs)
                         
-                        # apply each loss function
                         loss = 0
-                        for loss_fn in losses:
-                            loss += loss_fn(reg_out.float(),targets[:,:4].float())
+
+                        # apply each reg loss function
+                        # normalize targets
+                        reg_targets = ((targets[:,:4]/224.0)-0.5)*3 + 0.5
+                        
+                        for loss_fn in losses['reg']:
+                            loss += loss_fn(reg_out.float(),reg_targets.float())
+                            
+                        # apply each cls loss function
+                        cls_targets = targets[:,4]
+                        for loss_fn in losses['cls']:
+                            loss += loss_fn(cls_out.float(),cls_targets.long())
                         acc = 0
                         
                         # backpropogate loss and adjust model weights
@@ -231,6 +240,9 @@ if __name__ == "__main__":
     train_image_dir = "/home/worklab/Desktop/detrac/DETRAC-train-data"
     test_image_dir  = "/home/worklab/Desktop/detrac/DETRAC-test-data"
     
+    label_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\DETRAC-Train-Annotations-XML-v3"
+    train_image_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\Tracks"
+    test_image_dir =  "C:\\Users\\derek\\Desktop\\UA Detrac\\Tracks"
     
     # 1. CUDA for PyTorch
     use_cuda = torch.cuda.is_available()
@@ -265,8 +277,6 @@ if __name__ == "__main__":
         len(train_data)
         len(test_data)
     except:   
-        pos_path = "/media/worklab/data_HDD/cv_data/images/data_stanford_cars"
-        neg_path = "/media/worklab/data_HDD/cv_data/images/data_imagenet_loader"
         train_data = Localize_Dataset(train_image_dir, label_dir)
         test_data =  Localize_Dataset(test_image_dir,label_dir)
         
@@ -295,7 +305,9 @@ if __name__ == "__main__":
         print("Checkpoint loaded.")
      
     # 9. define losses
-    losses = [Box_Loss()]#, nn.MSELoss()]
+    losses = {"cls": [nn.NLLLoss()],
+              "reg": [Box_Loss(),nn.MSELoss()]
+              }
     
     if True:    
     # train model
