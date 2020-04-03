@@ -229,7 +229,51 @@ class Box_Loss(nn.Module):
         iou = intersection / (union + epsilon)
         #iou = torch.clamp(iou,0)
         return 1- iou.sum()/(len(iou)+epsilon)
+  
+def plot_batch(model,batch):
+        
+    cls_outs, reg_out = model(batch)
+    _, cls_out = torch.max(cls_outs,1)
+     
+    batch = batch.data.cpu().numpy()
+    bboxes = reg_out.data.cpu().numpy()
+    preds = cls_out.data.cpu().numpy()
     
+    # define figure subplot grid
+    batch_size = len(preds)
+    row_size = min(batch_size,8)
+    fig, axs = plt.subplots((batch_size+row_size-1)//row_size, row_size, constrained_layout=True)
+    # for image in batch, put image and associated label in grid
+    for i in range(0,batch_size):
+        im =  batch[i].transpose((1,2,0))
+        pred = preds[i]
+        bbox = bboxes[i]
+        
+        mean = np.array([0.485, 0.456, 0.406])
+        std = np.array([0.229, 0.224, 0.225])
+        im = std * im + mean
+        im = np.clip(im, 0, 1)
+        
+        label = cls.out[i]
+        
+        wer = 3
+        # transform bbox coords back into im pixel coords
+        bbox = (bbox* 224*wer - 224*(wer-1)/2).astype(int)
+        # plot bboxes
+        im = cv2.rectangle(im,(bbox[0],bbox[1]),(bbox[2],bbox[3]),(0.1,0.6,0.9),2)
+
+        if batch_size <= 8:
+            axs[i].imshow(im)
+            axs[i].set_title(label)
+            axs[i].set_xticks([])
+            axs[i].set_yticks([])
+        else:
+            axs[i//row_size,i%row_size].imshow(im)
+            axs[i//row_size,i%row_size].set_title(label)
+            axs[i//row_size,i%row_size].set_xticks([])
+            axs[i//row_size,i%row_size].set_yticks([])
+            plt.pause(.0001)    
+
 #------------------------------ Main code here -------------------------------#
 if __name__ == "__main__":
     
@@ -309,7 +353,7 @@ if __name__ == "__main__":
               "reg": [Box_Loss(),nn.MSELoss()]
               }
     
-    if True:    
+    if False:    
     # train model
         print("Beginning training.")
         model = train_model(model,
@@ -321,6 +365,10 @@ if __name__ == "__main__":
                             patience = patience,
                             start_epoch = start_epoch,
                             all_metrics = all_metrics)
+        
+    # try plotting
+    batch = next(dataloaders['train'])
+    plot_batch(model,batch)
         
     
 
