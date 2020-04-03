@@ -42,12 +42,16 @@ class Localize_Dataset(data.Dataset):
         label dir - (string) - a directory containing a label file per sequence
         """
 
-        # stores files for each set of images and each label
+        # stores files for each image
         dir_list = next(os.walk(image_dir))[1]
         track_list = [os.path.join(image_dir,item) for item in dir_list]
-        label_list = [os.path.join(label_dir,item) for item in os.listdir(label_dir)]
         track_list.sort()
-        label_list.sort()
+        
+        # parse labels and store in dict keyed by track name
+        label_list = {}
+        for item in os.listdir(label_dir):
+            name = item.split("_v3.xml")[0]
+            label_list[name] = self.parse_labels(os.path.join(label_dir,item))
         
         self.im_tf = transforms.Compose([
                 transforms.RandomApply([
@@ -70,25 +74,26 @@ class Localize_Dataset(data.Dataset):
         # parse and store all labels and image names in a list such that
         # all_data[i] returns dict with image name, label and other stats
         # track_offsets[i] retuns index of first frame of track[i[]]
-        for i in  range(0,1): #range(0,len(track_list)):
+        for i in range(0,len(track_list)):
 
             images = [os.path.join(track_list[i],frame) for frame in os.listdir(track_list[i])]
             images.sort() 
-            labels,metadata = self.parse_labels(label_list[i])
+            labels,metadata = label_list[track_list[i].split("/")[-1]]
             
             # each iteration of the loop gets one image
             for j in range(len(images)):
                 try:
                     image = images[j]
                     label = labels[j]
+                    
+                    # each iteration gets one label (one detection)
+                    for k in range(len(label)):
+                        detection = label[k]
+                        self.all_data.append((image,detection))
 
                 except:
-                    print("Error: tried to load label {} for track {} but it doesnt exist. Labels is length {}".format(j,i,len(labels)))
+                    print("Error: tried to load label {} for track {} but it doesnt exist. Labels is length {}".format(j,track_list[i],len(labels))) 
                 
-                # each iteration gets one label (one detection)
-                for k in range(len(label)):
-                    detection = label[k]
-                    self.all_data.append((image,detection))
                     
         # in case it is later important which files are which
         self.track_list = track_list
@@ -140,7 +145,6 @@ class Localize_Dataset(data.Dataset):
         im_crop,y = self.random_affine_crop(im_crop,y)
         # convert image and label to tensors
         im_t = self.im_tf(im_crop)
-        print (im_t.shape)
         return im_t, y
     
     
@@ -210,7 +214,7 @@ class Localize_Dataset(data.Dataset):
         crop_y = int(random.gauss(im.size[1]/2,ysize/10/scale)-imsize/2)
         
         # move crop if too close to edge
-        pad = 50
+        pad = 20
         if crop_x < pad:
             crop_x = im.size[0]/2 - imsize/2 # center
         if crop_y < pad:
@@ -360,9 +364,17 @@ class Localize_Dataset(data.Dataset):
 
 if __name__ == "__main__":
     #### Test script here
-    label_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\DETRAC-Train-Annotations-XML-v3"
-    image_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\Tracks"
-    test = Localize_Dataset(image_dir,label_dir)
+    try:
+        label_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\DETRAC-Train-Annotations-XML-v3"
+        image_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\Tracks"
+        test = Localize_Dataset(image_dir,label_dir)
+
+    except:
+        label_dir = "/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3"
+        image_dir = "/home/worklab/Desktop/detrac/DETRAC-train-data"
+        test = Localize_Dataset(image_dir,label_dir)
     idx = np.random.randint(0,len(test))
     test.show(idx)
     test.show(idx)
+    
+    cv2.destroyAllWindows()
