@@ -17,7 +17,7 @@ from torch import nn, optim
 from torch.utils import data
 from torchvision import transforms,models
 from torchvision.transforms import functional as F
-
+import matplotlib.pyplot  as plt
 from detrac_localization_dataset import Localize_Dataset
 
 
@@ -51,8 +51,8 @@ class ResNet_Localizer(nn.Module):
         self.classifier = nn.Sequential(
                           nn.Linear(start_num,mid_num,bias=True),
                           nn.ReLU(),
-                          nn.Linear(mid_num,cls_out_num,bias = True),
-                          nn.Softmax(dim = 1)
+                          nn.Linear(mid_num,cls_out_num,bias = True)
+                          #nn.Softmax(dim = 1)
                           )
         
         # define regressor
@@ -131,18 +131,24 @@ def train_model(model, optimizer, scheduler,losses,
                         cls_out,reg_out = model(inputs)
                         
                         loss = 0
-
+                        each_loss = []
                         # apply each reg loss function
                         # normalize targets
-                        reg_targets = ((targets[:,:4]/224.0)-0.5)*3 + 0.5
+                        imsize = 224
+                        wer = 3
+                        reg_targets = (targets[:,:4]+imsize*(wer-1)/2)/(imsize*wer)
                         
                         for loss_fn in losses['reg']:
-                            loss += loss_fn(reg_out.float(),reg_targets.float())
+                            loss_comp = loss_fn(reg_out.float(),reg_targets.float())
+                            loss += loss_comp
+                            each_loss.append(round(loss_comp.item()*100000)/100000.0)
                             
                         # apply each cls loss function
                         cls_targets = targets[:,4]
                         for loss_fn in losses['cls']:
-                            loss += loss_fn(cls_out.float(),cls_targets.long())
+                            loss_comp = loss_fn(cls_out.float(),cls_targets.long())
+                            loss += loss_comp
+                            each_loss.append(round(loss_comp.item()*100000)/100000.0)
                         acc = 0
                         
                         # backpropogate loss and adjust model weights
@@ -155,12 +161,14 @@ def train_model(model, optimizer, scheduler,losses,
                     total_acc += acc
                     total_loss += loss.item()
                     if count % 20 == 0:
-                      print("{} epoch {} batch {} -- Loss: {:03f}".format(phase,epoch,count,loss.item()))
+                      print("{} epoch {} batch {} -- Loss: {:03f} -- {}, {}, {}".format(phase,epoch,count,loss.item(),each_loss[0],each_loss[1],each_loss[2]))
             
             # report and record metrics
             avg_acc = total_acc/count
             avg_loss = total_loss/count
             if epoch % 1 == 0:
+                plot_batch(model,next(iter(dataloaders['train']))[0],class_dict)
+                
                 print("Epoch {} avg {} loss: {:05f}  acc: {}".format(epoch, phase,avg_loss,avg_acc))
                 all_metrics["{}_loss".format(phase)].append(total_loss)
                 all_metrics["{}_acc".format(phase)].append(avg_acc)
@@ -230,37 +238,70 @@ class Box_Loss(nn.Module):
         #iou = torch.clamp(iou,0)
         return 1- iou.sum()/(len(iou)+epsilon)
   
-def plot_batch(model,batch):
-        
-    cls_outs, reg_out = model(batch)
-    _, cls_out = torch.max(cls_outs,1)
-     
-    batch = batch.data.cpu().numpy()
-    bboxes = reg_out.data.cpu().numpy()
-    preds = cls_out.data.cpu().numpy()
+def plot_batch(model,batch,class_dict):
+    """
+    Given a batch and corresponding labels, plots both model predictions
+    and ground-truth
+    model - Localize_Net() object
+    batch - batch from loader loading Detrac_Localize_Dataset() data
+    class-dict - dict for converting between integer and string class labels
+    """
+    input = batch[0]
+    label = batch[1]
+    cls_label = label[:,4]
+    reg_label = label[:,:4]
+    cls_output, reg_output = model(input)
+    
+    _,cls_preds = torch.max(cls_output,1)
+    batch = input.data.cpu().numpy()
+    bboxes = reg_output.data.cpu().numpy()
     
     # define figure subplot grid
-    batch_size = len(preds)
+    batch_size = len(cls_label)
     row_size = min(batch_size,8)
     fig, axs = plt.subplots((batch_size+row_size-1)//row_size, row_size, constrained_layout=True)
+    
     # for image in batch, put image and associated label in grid
     for i in range(0,batch_size):
-        im =  batch[i].transpose((1,2,0))
-        pred = preds[i]
+        
+        # get image
+        im   = batch[i].transpose((1,2,0))
+        mean = np.array([0.485, 0.456, 0.406])
+        std  = np.array([0.229, 0.224, 0.225])
+        im   = std * im + mean
+        im   = np.clip(im, 0, 1)
+        
+        # get predictions
+        cls_pred = cls_preds[i].item()
         bbox = bboxes[i]
         
-        mean = np.array([0.485, 0.456, 0.406])
-        std = np.array([0.229, 0.224, 0.225])
-        im = std * im + mean
-        im = np.clip(im, 0, 1)
-        
-        label = cls.out[i]
+        # get ground truths
+        cls_true = cls_label[i].item()
+        reg_true = reg_label[i]
         
         wer = 3
+        imsize = 224
+        
+        # convert to normalized coords
+        reg_true = (reg_true+imsize*(wer-1)/2)/(imsize*wer)
+        # convert to im coords
+        reg_true = (reg_true* 224*wer - 224*(wer-1)/2).int()
+
+
+        
+        
         # transform bbox coords back into im pixel coords
         bbox = (bbox* 224*wer - 224*(wer-1)/2).astype(int)
-        # plot bboxes
+        # plot pred bbox
         im = cv2.rectangle(im,(bbox[0],bbox[1]),(bbox[2],bbox[3]),(0.1,0.6,0.9),2)
+       
+        # plot ground truth bbox
+        im = cv2.rectangle(im,(reg_true[0],reg_true[1]),(reg_true[2],reg_true[3]),(0.6,0.1,0.9),2)
+
+        im = im.get()
+        
+        # title with class preds and gt
+        label = "{} -> ({})".format(class_dict[cls_pred],class_dict[cls_true])
 
         if batch_size <= 8:
             axs[i].imshow(im)
@@ -272,7 +313,38 @@ def plot_batch(model,batch):
             axs[i//row_size,i%row_size].set_title(label)
             axs[i//row_size,i%row_size].set_xticks([])
             axs[i//row_size,i%row_size].set_yticks([])
-            plt.pause(.0001)    
+        plt.pause(.001)    
+    #plt.close()
+
+class_dict = {
+            'Sedan':0,
+            'Hatchback':1,
+            'Suv':2,
+            'Van':3,
+            'Police':4,
+            'Taxi':5,
+            'Bus':6,
+            'Truck-Box-Large':7,
+            'MiniVan':8,
+            'Truck-Box-Med':9,
+            'Truck-Util':10,
+            'Truck-Pickup':11,
+            'Truck-Flatbed':12,
+            
+            0:'Sedan',
+            1:'Hatchback',
+            2:'Suv',
+            3:'Van',
+            4:'Police',
+            5:'Taxi',
+            6:'Bus',
+            7:'Truck-Box-Large',
+            8:'MiniVan',
+            9:'Truck-Box-Med',
+            10:'Truck-Util',
+            11:'Truck-Pickup',
+            12:'Truck-Flatbed'
+            }
 
 #------------------------------ Main code here -------------------------------#
 if __name__ == "__main__":
@@ -281,12 +353,12 @@ if __name__ == "__main__":
     patience = 10
 
     label_dir       = "/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3"
-    train_image_dir = "/home/worklab/Desktop/detrac/DETRAC-train-data"
+    train_image_dir = "/home/worklab/Desktop/detrac/DETRAC-all-data"
     test_image_dir  = "/home/worklab/Desktop/detrac/DETRAC-test-data"
     
-    label_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\DETRAC-Train-Annotations-XML-v3"
-    train_image_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\Tracks"
-    test_image_dir =  "C:\\Users\\derek\\Desktop\\UA Detrac\\Tracks"
+    #label_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\DETRAC-Train-Annotations-XML-v3"
+    #train_image_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\Tracks"
+    #test_image_dir =  "C:\\Users\\derek\\Desktop\\UA Detrac\\Tracks"
     
     # 1. CUDA for PyTorch
     use_cuda = torch.cuda.is_available()
@@ -330,13 +402,13 @@ if __name__ == "__main__":
     # group dataloaders
     dataloaders = {"train":trainloader, "val": testloader}
     datasizes = {"train": len(train_data), "val": len(test_data)}
-    print("Got dataloaders.")
+    print("Got dataloaders. {},{}".format(datasizes['train'],datasizes['val']))
     
     # 5. define stochastic gradient descent optimizer    
-    optimizer = optim.SGD(model.parameters(), lr=0.001,momentum = 0.9)
+    optimizer = optim.SGD(model.parameters(), lr=0.01,momentum = 0.1)
     
     # 6. decay LR by a factor of 0.1 every 7 epochs
-    exp_lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.5)
+    exp_lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
     
     # 7. define start epoch for consistent labeling if checkpoint is reloaded
     start_epoch = 0
@@ -349,14 +421,14 @@ if __name__ == "__main__":
         print("Checkpoint loaded.")
      
     # 9. define losses
-    losses = {"cls": [nn.NLLLoss()],
+    losses = {"cls": [nn.CrossEntropyLoss()],
               "reg": [Box_Loss(),nn.MSELoss()]
               }
     
     if False:    
     # train model
         print("Beginning training.")
-        model = train_model(model,
+        model,all_metrics = train_model(model,
                             optimizer, 
                             exp_lr_scheduler,
                             losses,
@@ -367,8 +439,8 @@ if __name__ == "__main__":
                             all_metrics = all_metrics)
         
     # try plotting
-    batch = next(dataloaders['train'])
-    plot_batch(model,batch)
+    batch = next(iter(dataloaders['train']))
+    plot_batch(model,batch,class_dict)
         
     
 

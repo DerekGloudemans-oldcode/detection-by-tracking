@@ -78,7 +78,7 @@ class Localize_Dataset(data.Dataset):
 
             images = [os.path.join(track_list[i],frame) for frame in os.listdir(track_list[i])]
             images.sort() 
-            labels,metadata = label_list[track_list[i].split("\\")[-1]]
+            labels,metadata = label_list[track_list[i].split("/")[-1]]
             
             # each iteration of the loop gets one image
             for j in range(len(images)):
