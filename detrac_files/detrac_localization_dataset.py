@@ -55,11 +55,15 @@ class Localize_Dataset(data.Dataset):
         
         self.im_tf = transforms.Compose([
                 transforms.RandomApply([
-                    transforms.ColorJitter(brightness = 0.2,contrast = 0.2,saturation = 0.1)
+                    transforms.ColorJitter(brightness = 0.3,contrast = 0.3,saturation = 0.2)
                         ]),
                 transforms.ToTensor(),
-                transforms.RandomErasing(p=0.25, scale=(0.02, 0.33), ratio=(0.3, 3.3), value=(0.485,0.456,0.406)),
-                transforms.RandomErasing(p=0.2, scale=(0.02, 0.5), ratio=(0.3, 3.3), value=(0.485,0.456,0.406)),
+                transforms.RandomErasing(p=0.2, scale=(0.02, 0.1), ratio=(0.3, 3.3), value=(0.485,0.456,0.406)),
+                transforms.RandomErasing(p=0.2, scale=(0.02, 0.2), ratio=(0.3, 3.3), value=(0.485,0.456,0.406)),
+                transforms.RandomErasing(p=0.1, scale=(0.02, 0.3), ratio=(0.3, 3.3), value=(0.485,0.456,0.406)),
+                transforms.RandomErasing(p=0.2, scale=(0.02, 0.1), ratio=(0.3, 3.3), value=(0.485,0.456,0.406)),
+                transforms.RandomErasing(p=0.2, scale=(0.02, 0.1), ratio=(0.3, 3.3), value=(0.485,0.456,0.406)),
+
                 transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])
                 ])
@@ -74,7 +78,7 @@ class Localize_Dataset(data.Dataset):
         # parse and store all labels and image names in a list such that
         # all_data[i] returns dict with image name, label and other stats
         # track_offsets[i] retuns index of first frame of track[i[]]
-        for i in range(0,1):#len(track_list)):
+        for i in range(len(track_list)):
 
             images = [os.path.join(track_list[i],frame) for frame in os.listdir(track_list[i])]
             images.sort() 
@@ -364,15 +368,15 @@ class Localize_Dataset(data.Dataset):
 
 if __name__ == "__main__":
     #### Test script here
-    #try:
-    label_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\DETRAC-Train-Annotations-XML-v3"
-    image_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\Tracks"
-    test = Localize_Dataset(image_dir,label_dir)
+    try:
+        label_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\DETRAC-Train-Annotations-XML-v3"
+        image_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\Tracks"
+        test = Localize_Dataset(image_dir,label_dir)
 
-    #except:
-    #label_dir = "/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3"
-    #image_dir = "/home/worklab/Desktop/detrac/DETRAC-train-data"
-    #test = Localize_Dataset(image_dir,label_dir)
+    except:
+        label_dir = "/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3"
+        image_dir = "/home/worklab/Desktop/detrac/DETRAC-all-data"
+        test = Localize_Dataset(image_dir,label_dir)
     idx = np.random.randint(0,len(test))
     test.show(idx)
     test.show(idx)

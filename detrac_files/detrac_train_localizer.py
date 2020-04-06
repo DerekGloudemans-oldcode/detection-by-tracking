@@ -20,6 +20,9 @@ from torchvision.transforms import functional as F
 import matplotlib.pyplot  as plt
 from detrac_localization_dataset import Localize_Dataset
 
+import warnings
+warnings.filterwarnings(action='once')
+
 
 # define ResNet18 based network structure
 class ResNet_Localizer(nn.Module):
@@ -160,14 +163,28 @@ def train_model(model, optimizer, scheduler,losses,
                     count += 1
                     total_acc += acc
                     total_loss += loss.item()
-                    if count % 20 == 0:
-                      print("{} epoch {} batch {} -- Loss: {:03f} -- {}, {}, {}".format(phase,epoch,count,loss.item(),each_loss[0],each_loss[1],each_loss[2]))
-            
-            # report and record metrics
+                    if count % 1000 == 0:
+                      print("{} epoch {} batch {} -- Loss so far: {:03f} -- {}, {}, {}".format(phase,epoch,count,total_loss/count,each_loss[0],each_loss[1],each_loss[2]))
+                      plot_batch(model,next(iter(dataloaders['train'])),class_dict)
+                    
+                    # periodically save best checkpoint
+                    if count % 10000 == 0:
+                        avg_loss = total_loss/count
+                        if avg_loss < best_loss:
+                            # save a checkpoint
+                            PATH = "/home/worklab/Desktop/checkpoints/detrac_localizer/resnet18_epoch{}_batch{}.pt".format(epoch,count)
+                            torch.save({
+                                'epoch': epoch,
+                                'model_state_dict': model.state_dict(),
+                                'optimizer_state_dict': optimizer.state_dict(),
+                                "metrics": all_metrics
+                                }, PATH)
+                            
+            # report and record metrics at end of epoch
             avg_acc = total_acc/count
             avg_loss = total_loss/count
             if epoch % 1 == 0:
-                plot_batch(model,next(iter(dataloaders['train']))[0],class_dict)
+                plot_batch(model,next(iter(dataloaders['train'])),class_dict)
                 
                 print("Epoch {} avg {} loss: {:05f}  acc: {}".format(epoch, phase,avg_loss,avg_acc))
                 all_metrics["{}_loss".format(phase)].append(total_loss)
@@ -350,10 +367,11 @@ class_dict = {
 if __name__ == "__main__":
     
     checkpoint_file = None
-    patience = 10
+    checkpoint_file = "/home/worklab/Desktop/checkpoints/detrac_localizer/resnet18_epoch4.pt"
+    patience = 3
 
     label_dir       = "/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3"
-    train_image_dir = "/home/worklab/Desktop/detrac/DETRAC-all-data"
+    train_image_dir = "/home/worklab/Desktop/detrac/DETRAC-train-data"
     test_image_dir  = "/home/worklab/Desktop/detrac/DETRAC-test-data"
     
     #label_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\DETRAC-Train-Annotations-XML-v3"
@@ -408,10 +426,10 @@ if __name__ == "__main__":
     optimizer = optim.SGD(model.parameters(), lr=0.01,momentum = 0.1)
     
     # 6. decay LR by a factor of 0.1 every 7 epochs
-    exp_lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
+    exp_lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.3)
     
     # 7. define start epoch for consistent labeling if checkpoint is reloaded
-    start_epoch = 0
+    start_epoch = -1
     all_metrics = None
 
     # 8. if checkpoint specified, load model and optimizer weights from checkpoint
@@ -435,11 +453,11 @@ if __name__ == "__main__":
                             dataloaders,
                             device,
                             patience = patience,
-                            start_epoch = start_epoch,
+                            start_epoch = start_epoch+1,
                             all_metrics = all_metrics)
         
     # try plotting
-    batch = next(iter(dataloaders['train']))
+    batch = next(iter(dataloaders['val']))
     plot_batch(model,batch,class_dict)
         
     
