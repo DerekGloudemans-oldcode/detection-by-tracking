@@ -18,7 +18,12 @@ from torch.utils import data
 from torchvision import transforms,models
 from torchvision.transforms import functional as F
 import matplotlib.pyplot  as plt
-from detrac_localization_dataset import Localize_Dataset
+
+try:
+    from detrac_localization_dataset import Localize_Dataset
+except:
+    from detrac_files.detrac_localization_dataset import Localize_Dataset
+
 
 import warnings
 warnings.filterwarnings(action='once')

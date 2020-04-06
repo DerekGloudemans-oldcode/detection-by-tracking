@@ -124,7 +124,7 @@ class Localize_Dataset(data.Dataset):
         # copy so that original coordinates aren't overwritten
         bbox = label["bbox"].copy()
         
-        buffer = max(0,np.random.normal(40,10))
+        buffer =  max(0,np.random.normal(40,10))
         # note may have indexed these wrongly
         minx = max(0,bbox[0]-buffer)
         miny = max(0,bbox[1]-buffer)
@@ -214,11 +214,16 @@ class Localize_Dataset(data.Dataset):
                 y[3] = y[3] - ydiff*tighten
             
         # get crop location with normal distribution at image center
-        crop_x = int(random.gauss(im.size[0]/2,xsize/10/scale)-imsize/2)
-        crop_y = int(random.gauss(im.size[1]/2,ysize/10/scale)-imsize/2)
+        crop_x = int(random.gauss(im.size[0]/2,xsize/scale)-imsize/2)
+        crop_y = int(random.gauss(im.size[1]/2,ysize/scale)-imsize/2)
+        
+        crop_x = int(random.gauss((y[2]+y[0])/2 , 50))
+        crop_y = int(random.gauss((y[1]+y[3])/2 , 50))
+        
+
         
         # move crop if too close to edge
-        pad = 20
+        pad = 0
         if crop_x < pad:
             crop_x = im.size[0]/2 - imsize/2 # center
         if crop_y < pad:
@@ -239,6 +244,7 @@ class Localize_Dataset(data.Dataset):
         y[2] = y[2] - crop_x
         y[3] = y[3] - crop_y
         
+                
         return im,y
 
     
@@ -369,14 +375,17 @@ class Localize_Dataset(data.Dataset):
 if __name__ == "__main__":
     #### Test script here
     try:
-        label_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\DETRAC-Train-Annotations-XML-v3"
-        image_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\Tracks"
-        test = Localize_Dataset(image_dir,label_dir)
-
+        test
     except:
-        label_dir = "/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3"
-        image_dir = "/home/worklab/Desktop/detrac/DETRAC-all-data"
-        test = Localize_Dataset(image_dir,label_dir)
+        try:
+            label_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\DETRAC-Train-Annotations-XML-v3"
+            image_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\Tracks"
+            test = Localize_Dataset(image_dir,label_dir)
+    
+        except:
+            label_dir = "/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3"
+            image_dir = "/home/worklab/Desktop/detrac/DETRAC-all-data"
+            test = Localize_Dataset(image_dir,label_dir)
     idx = np.random.randint(0,len(test))
     test.show(idx)
     test.show(idx)
