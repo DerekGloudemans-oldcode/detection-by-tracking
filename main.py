@@ -8,6 +8,7 @@ Created on Sat Mar  7 15:45:48 2020
 import os
 import numpy as np
 import random 
+import time
 import math
 random.seed = 0
 
@@ -156,12 +157,25 @@ if __name__ == "__main__":
     next_obj_id = 0             # next id for a new object (incremented during tracking)
     fsld = {}                   # fsld[id] stores frames since last detected for object id
     all_tracks = {}
+    time_metrics = {
+        "gpu_load":0,
+        "predict":0,
+        "detect":0,
+        "parse":0,
+        "match":0,
+        "update":0,
+        "add and remove":0,
+        "store":0,
+        "plot":0
+        }
     #%% 3. Main Loop
 
 
     for frame in frames:
         
         # 1. Predict next object locations
+        start = time.time()
+
         try:
             tracker.predict()
             pre_locations = tracker.objs()
@@ -169,16 +183,34 @@ if __name__ == "__main__":
             # in the case that there are no active objects will throw exception
             pre_locations = []
             
+        time_metrics['predict'] += time.time() - start
+    
+    
         # 2. Detect, either with ResNet or Yolo
+        start = time.time()
+        
         if frame_num % det_step == 0:
             frame = frame.to(device)
+            
+            time_metrics['gpu_load'] += time.time() - start
+            start = time.time()
+
             detections = detector.detect_tensor(frame).cpu()
+            torch.cuda.synchronize(device)
+            time_metrics['detect'] += time.time() - start
+            start = time.time()
+            
             detections = parse_detections(detections)
+            
+            time_metrics['parse'] += time.time() - start
+              
         else:
             pass
         
         
-        # 3. Match, using Hungarian Algorithm
+        # 3. Match, using Hungarian Algorithm        
+        start = time.time()
+        
         pre_ids = []
         pre_loc = []
         for id in pre_locations:
@@ -189,8 +221,12 @@ if __name__ == "__main__":
         # matchings[i] = [a,b] where a is index of pre_loc and b is index of detection
         matchings = match_hungarian(pre_loc,detections[:,:4])
         
+        time_metrics['match'] += time.time() - start
+
         
         # 4. Update tracked objects
+        start = time.time()
+
         update_array = np.zeros([len(matchings),4])
         update_ids = []
         for i in range(len(matchings)):
@@ -203,9 +239,13 @@ if __name__ == "__main__":
         
         if len(update_array) > 0:    
             tracker.update(update_array,update_ids)
-                        
+          
+            time_metrics['update'] += time.time() - start
+              
         
         # 5. For each detection not in matchings, add a new object
+        start = time.time()
+        
         new_array = np.zeros([len(detections) - len(matchings),4])
         new_ids = []
         cur_row = 0
@@ -225,7 +265,7 @@ if __name__ == "__main__":
             tracker.add(new_array,new_ids)
         
         
-        # 6. For each untracked object, increment fsld
+        # 6. For each untracked object, increment fsld        
         for i in range(len(pre_ids)):
             if i not in matchings[:,0]:
                 fsld[pre_ids[i]] += 1
@@ -240,14 +280,22 @@ if __name__ == "__main__":
         if len(removals) > 0:
             tracker.remove(removals)    
         
+        time_metrics['add and remove'] += time.time() - start
+
         
         # 8. Get all object locations and store in output dict
+        start = time.time()
+
         post_locations = tracker.objs()
         for id in post_locations:
             all_tracks[id][frame_num,:] = post_locations[id]
-            
+        
+        time_metrics['store'] += time.time() - start
+
             
         # 9. Plot
+        start = time.time()
+
         if PLOT:
             # convert tensor back to CV im
             frame = frame.data.cpu().numpy()
@@ -283,8 +331,10 @@ if __name__ == "__main__":
                 cv2.rectangle(im,c1,c2,color,1)
             
             cv2.imshow("window",im)
+            time_metrics['plot'] += time.time() - start
             cv2.waitKey(1)
-            # plot each rectange with text label
+            
+            
             
         print("Finished frame {}".format(frame_num))
         frame_num += 1
@@ -292,3 +342,12 @@ if __name__ == "__main__":
             
     
     cv2.destroyAllWindows()
+    
+    total_time = 0
+    for key in time_metrics:
+        total_time += time_metrics[key]
+    
+    print("Total Framerate: {:.2f} fps".format(n_frames/total_time))
+    print("---------- per operation ----------")
+    for key in time_metrics:
+        print("{:.3f}s ({:.2f}%) on {}".format(time_metrics[key],time_metrics[key]/total_time*100,key))
