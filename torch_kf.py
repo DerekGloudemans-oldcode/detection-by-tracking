@@ -18,7 +18,7 @@ class Torch_KF(object):
         state_size = 7
         self.state_size = state_size
 
-        self.t = 1#/30.0
+        self.t = 1/30.0
         self.device = device
         
         self.P0 = torch.zeros(state_size,state_size) # state covariance

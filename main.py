@@ -14,9 +14,7 @@ random.seed = 0
 import cv2
 from PIL import Image
 import torch
-from torch import nn, optim
-from torch.utils import data
-from torchvision import transforms,models
+
 from torchvision.transforms import functional as F
 import matplotlib.pyplot  as plt
 from scipy.optimize import linear_sum_assignment
@@ -104,9 +102,9 @@ if __name__ == "__main__":
     yolo_checkpoint =   "/home/worklab/Desktop/checkpoints/yolo/yolov3.weights"
     resnet_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer/resnet18_cpu.pt"
     track_directory =   "/home/worklab/Desktop/detrac/DETRAC-train-data/MVI_20011"
-    det_step = 10               
+    det_step = 1               
     PLOT = True
-    fsld_max = 1
+    fsld_max = 5
     
     # get CNNs
     try:
@@ -131,7 +129,7 @@ if __name__ == "__main__":
     localizer = localizer.to(device)
     print("Detector and Localizer on {}.".format(device))
     
-    tracker = Torch_KF("cpu",mod_err = 1000)
+    tracker = Torch_KF("cpu",mod_err = 1, meas_err = 1)
 
      
     #%% 2. Loop Setup
@@ -277,12 +275,20 @@ if __name__ == "__main__":
                 cv2.rectangle(im, c1, c2,color, -1)
                 cv2.putText(im, label, (c1[0], c1[1] + t_size[1] + 4), cv2.FONT_HERSHEY_PLAIN,1, [225,255,255], 1);
             
+            for det in detections:
+                bbox = det[:4]
+                color = (0.4,0.4,0.7) #colors[int(obj.cls)]
+                c1 = (int(bbox[0]-bbox[3]*bbox[2]/2),int(bbox[1]-bbox[2]/2))
+                c2 =  (int(bbox[0]+bbox[3]*bbox[2]/2),int(bbox[1]+bbox[2]/2))
+                cv2.rectangle(im,c1,c2,color,1)
             
             cv2.imshow("window",im)
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
+            cv2.waitKey(1)
             # plot each rectange with text label
             
-        
         print("Finished frame {}".format(frame_num))
         frame_num += 1
+        torch.cuda.empty_cache()
+            
+    
+    cv2.destroyAllWindows()
