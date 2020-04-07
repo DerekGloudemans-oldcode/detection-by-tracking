@@ -104,8 +104,9 @@ if __name__ == "__main__":
     yolo_checkpoint =   "/home/worklab/Desktop/checkpoints/yolo/yolov3.weights"
     resnet_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer/resnet18_cpu.pt"
     track_directory =   "/home/worklab/Desktop/detrac/DETRAC-train-data/MVI_20011"
-    det_step = 10
-    
+    det_step = 10               
+    PLOT = True
+    fsld_max = 1
     
     # get CNNs
     try:
@@ -130,7 +131,7 @@ if __name__ == "__main__":
     localizer = localizer.to(device)
     print("Detector and Localizer on {}.".format(device))
     
-    tracker = Torch_KF("cpu")
+    tracker = Torch_KF("cpu",mod_err = 1000)
 
      
     #%% 2. Loop Setup
@@ -149,12 +150,11 @@ if __name__ == "__main__":
                                  std=[0.229, 0.224, 0.225])
          #im = im.to(device)
          frames.append(im)
-         
+    n_frames = len(frames)
+     
     print("All frames loaded into memory")     
    
-    detection_frequency = 1    # controls dense detection ratio
     frame_num = 0               # iteration counter   
-    fsld_max = 20               # controls max number of untracked frames
     next_obj_id = 0             # next id for a new object (incremented during tracking)
     fsld = {}                   # fsld[id] stores frames since last detected for object id
     all_tracks = {}
@@ -166,13 +166,13 @@ if __name__ == "__main__":
         # 1. Predict next object locations
         try:
             tracker.predict()
-            pre_locations = tracker.objs().numpy()
+            pre_locations = tracker.objs()
         except:
             # in the case that there are no active objects will throw exception
             pre_locations = []
             
         # 2. Detect, either with ResNet or Yolo
-        if frame_num % detection_frequency == 0:
+        if frame_num % det_step == 0:
             frame = frame.to(device)
             detections = detector.detect_tensor(frame).cpu()
             detections = parse_detections(detections)
@@ -215,9 +215,10 @@ if __name__ == "__main__":
             if len(matchings) == 0 or i not in matchings[:,1]:
                 
                 new_ids.append(next_obj_id)
-                fsld[next_obj_id] = 0
-                all_tracks[next_obj_id] = []
                 new_array[cur_row,:] = detections[i,:4]
+
+                fsld[next_obj_id] = 0
+                all_tracks[next_obj_id] = np.zeros([n_frames,7])
                 
                 next_obj_id += 1
                 cur_row += 1
@@ -234,7 +235,7 @@ if __name__ == "__main__":
         
         # 7. remove lost objects
         removals = []
-        for id in fsld:
+        for id in pre_ids:
             if fsld[id] > fsld_max:
                 removals.append(id)
        
@@ -245,7 +246,43 @@ if __name__ == "__main__":
         # 8. Get all object locations and store in output dict
         post_locations = tracker.objs()
         for id in post_locations:
-            all_tracks[id].append(post_locations[id])
+            all_tracks[id][frame_num,:] = post_locations[id]
+            
+            
+        # 9. Plot
+        if PLOT:
+            # convert tensor back to CV im
+            frame = frame.data.cpu().numpy()
+            im   = frame.transpose((1,2,0))
+            mean = np.array([0.485, 0.456, 0.406])
+            std  = np.array([0.229, 0.224, 0.225])
+            im   = std * im + mean
+            im   = np.clip(im, 0, 1)
+            im   = im[:,:,[2,1,0]]
+            im = im.copy()
+            
+            for id in post_locations:
+                # plot bbox
+                label = "Object {}".format(id)
+                bbox = post_locations[id][:4]
+
+                color = (0.7,0.7,0.4) #colors[int(obj.cls)]
+                c1 = (int(bbox[0]-bbox[3]*bbox[2]/2),int(bbox[1]-bbox[2]/2))
+                c2 =  (int(bbox[0]+bbox[3]*bbox[2]/2),int(bbox[1]+bbox[2]/2))
+                cv2.rectangle(im,c1,c2,color,1)
+                
+                # plot label
+                t_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_PLAIN,1 , 1)[0]
+                c2 = c1[0] + t_size[0] + 3, c1[1] + t_size[1] + 4
+                cv2.rectangle(im, c1, c2,color, -1)
+                cv2.putText(im, label, (c1[0], c1[1] + t_size[1] + 4), cv2.FONT_HERSHEY_PLAIN,1, [225,255,255], 1);
+            
+            
+            cv2.imshow("window",im)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
+            # plot each rectange with text label
+            
         
         print("Finished frame {}".format(frame_num))
         frame_num += 1

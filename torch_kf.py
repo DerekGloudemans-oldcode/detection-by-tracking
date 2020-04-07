@@ -12,15 +12,13 @@ import matplotlib.pyplot as plt
 import time
 
 class Torch_KF(object):
-    def __init__(self,device):
+    def __init__(self,device,state_err = 1, meas_err = 1, mod_err = 1):
         # initialize tensors
+        meas_size = 4
         state_size = 7
         self.state_size = state_size
-        meas_size = 4
-        mod_err = 1
-        meas_err = 1
-        state_err =1
-        self.t = 1/30.0
+
+        self.t = 1#/30.0
         self.device = device
         
         self.P0 = torch.zeros(state_size,state_size) # state covariance
@@ -101,6 +99,12 @@ class Torch_KF(object):
         self.X = self.X[keepers,:]
         self.P = self.P[keepers,:]
     
+        # since rows were deleted from X and P, shift idxs accordingly
+        new_id = 0
+        for id in self.obj_idxs:
+            if self.obj_idxs[id] is not None:
+                self.obj_idxs[id] = new_id
+                new_id += 1
     
     def predict(self):
         """
@@ -171,7 +175,7 @@ class Torch_KF(object):
         for id in self.obj_idxs:
             idx = self.obj_idxs[id]
             if idx is not None:
-                out_dict[id] = self.X[idx,:].data.cpu()
+                out_dict[id] = self.X[idx,:].data.cpu().numpy()
         return out_dict        
 
 if __name__ == "__main__":
