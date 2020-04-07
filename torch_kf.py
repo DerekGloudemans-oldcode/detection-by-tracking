@@ -9,9 +9,9 @@ Created on Mon Apr  6 10:49:38 2020
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
+import time
 
-
-class torch_KF(object):
+class Torch_KF(object):
     def __init__(self,device):
         # initialize tensors
         state_size = 7
@@ -21,6 +21,7 @@ class torch_KF(object):
         meas_err = 1
         state_err =1
         self.t = 1/30.0
+        self.device = device
         
         self.P0 = torch.zeros(state_size,state_size) # state covariance
 
@@ -52,6 +53,14 @@ class torch_KF(object):
         self.Q = torch.eye(state_size).unsqueeze(0) * mod_err
         self.R = torch.eye(meas_size).unsqueeze(0) * meas_err
         
+        self.F = self.F.to(device)
+        self.H = self.H.to(device)
+        self.Q = self.Q.to(device)
+        self.R = self.R.to(device)
+        self.P0 = self.P0.to(device)
+
+        
+        
     def add(self,detections,obj_ids):
         """
         Initializes KF matrices if first object, otherwise adds new object to matrices
@@ -60,7 +69,7 @@ class torch_KF(object):
         """
         
         newX = torch.zeros((len(detections),self.state_size))
-        newX[:,:4] = torch.from_numpy(detections)
+        newX[:,:4] = torch.from_numpy(detections).to(self.device)
         newP = self.P0.repeat(len(obj_ids),1,1)
 
         # store state and initialize P with defaults
@@ -70,8 +79,8 @@ class torch_KF(object):
             self.P = torch.cat((self.P,newP), dim = 0)
         except:
             new_idx = 0
-            self.X = newX
-            self.P = newP
+            self.X = newX.to(self.device)
+            self.P = newP.to(self.device)
             
         # add obj_ids to dictionary
         for id in obj_ids:
@@ -123,7 +132,7 @@ class torch_KF(object):
         P_up = self.P[relevant,:,:]
         
         # state innovation --> y = z - XHt --> mx4 = mx4 - [mx7] x [4x7]t  
-        z = torch.from_numpy(detections)
+        z = torch.from_numpy(detections).to(self.device)
         y = z - torch.mm(X_up, self.H.transpose(0,1))
         
         # covariance innovaton --> HPHt + R --> [mx4x4] = [mx4x7] bx [mx7x7] bx [mx4x7]t + [mx4x4]
@@ -145,7 +154,7 @@ class torch_KF(object):
         X_up = X_up + step1
         
         # P_updated --> (I-KH)P --> [m,7,7] = ([m,7,7 - [m,7,4] bx [m,4,7]) bx [m,7,7]    
-        I = torch.eye(7).unsqueeze(0).repeat(len(P_up),1,1)
+        I = torch.eye(7).unsqueeze(0).repeat(len(P_up),1,1).to(self.device)
         step1 = I - torch.bmm(K,H_rep)
         P_up = torch.bmm(step1,P_up)
         
@@ -162,51 +171,81 @@ class torch_KF(object):
         for id in self.obj_idxs:
             idx = self.obj_idxs[id]
             if idx is not None:
-                out_dict[id] = self.X[idx,:]
+                out_dict[id] = self.X[idx,:].data.cpu()
         return out_dict        
 
 if __name__ == "__main__":
     """
     A test script in which bounding boxes are randomly generated and jittered to create motion
     """
-    ids = [0,1,2,3,4,5,6,7,8,9]
-    detections = np.random.rand(10,4)*50
-
-    colors = np.random.rand(1000,4)
-    colors2 = colors.copy()
-    colors[:,3]  = 0.2
-    colors2[:,3] = 1
-    filter = torch_KF(None)
-    filter.add(detections,ids)
-    for i in range(0,500):
+    
+     # CUDA for PyTorch
+    use_cuda = torch.cuda.is_available()
+    device = torch.device("cuda:0" if use_cuda else "cpu")
+    torch.cuda.empty_cache()   
+    
+    all_trials = [3,10,30,100,300,1000]
+    all_results = {"cuda:0":[],"cpu":[]}
+    for device in ["cuda:0","cpu"]:
+        for n_objs in all_trials:
         
-        filter.predict()
+            #n_objs =1000
+            n_frames = 1000
+            
+            ids = list(range(n_objs))
+            detections = np.random.rand(n_objs,4)*50
         
-        detections = detections + np.random.normal(0,1,[10,4]) + 1
-        detections[:,2:] = detections[:,2:]/50
-        remove = np.random.randint(0,9)
+            colors = np.random.rand(n_objs,4)
+            colors2 = colors.copy()
+            colors[:,3]  = 0.2
+            colors2[:,3] = 1
+            filter = torch_KF(device)
+            
+            start_time = time.time()
+            
+            filter.add(detections,ids)
+            for i in range(0,n_frames):
+                
+                start = time.time()
+                filter.predict()
+                
+                detections = detections + np.random.normal(0,1,[n_objs,4]) + 1
+                detections[:,2:] = detections[:,2:]/50
+                remove = np.random.randint(0,n_objs - 1)
+                
+                ids_r = ids.copy()
+                del ids_r[remove]
+                det_r = detections[ids_r,:]
+                start = time.time()
+                filter.update(det_r,ids_r)
+                tracked_objects = filter.objs()
         
-        ids_r = ids.copy()
-        del ids_r[remove]
-        det_r = detections[ids_r,:]
-        filter.update(det_r,ids_r)
-        tracked_objects = filter.objs()
-        
-        # plot the points to visually confirm that it seems to be working 
-        x_coords = []
-        y_coords = []
-        for key in tracked_objects:
-            x_coords.append(tracked_objects[key][0])
-            y_coords.append(tracked_objects[key][1])
-        for i in range(len(x_coords)):
-            if i < len(x_coords) -1:
-                plt.scatter(det_r[i,0],det_r[i,1], color = colors2[i])
-            plt.scatter(x_coords[i],y_coords[i],s = 300,color = colors[i])
-            plt.annotate(i,(x_coords[i],y_coords[i]))
-        plt.draw()
-        plt.pause(0.001)
-        plt.clf()
-        
-        
-        
-       
+                if False:
+                    # plot the points to visually confirm that it seems to be working 
+                    x_coords = []
+                    y_coords = []
+                    for key in tracked_objects:
+                        x_coords.append(tracked_objects[key][0])
+                        y_coords.append(tracked_objects[key][1])
+                    for i in range(len(x_coords)):
+                        if i < len(x_coords) -1:
+                            plt.scatter(det_r[i,0],det_r[i,1], color = colors2[i])
+                        plt.scatter(x_coords[i],y_coords[i],s = 300,color = colors[i])
+                        plt.annotate(i,(x_coords[i],y_coords[i]))
+                    plt.draw()
+                    plt.pause(0.0001)
+                    plt.clf()
+                
+            total_time = time.time() - start_time
+            frame_rate = n_frames/total_time
+            all_results[device].append(frame_rate)
+            print("Filtering {} objects for {} frames took {} sec. Average frame rate: {} on {}".format(n_objs,n_frames,total_time, n_frames/total_time,device))
+            torch.cuda.empty_cache()
+            
+    plt.figure()   
+    plt.plot(all_trials,all_results['cpu'])
+    plt.plot(all_trials,all_results['cuda:0'])
+    plt.xlabel("Number of filtered objects")
+    plt.ylabel("Frame Rate (Hz)")
+    plt.legend(["CPU","GPU"])
+    plt.title("Frame Rate versus number of objects")
