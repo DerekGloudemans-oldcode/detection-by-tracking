@@ -17,6 +17,7 @@ from PIL import Image
 import torch
 
 from torchvision.transforms import functional as F
+from torchvision.ops import roi_align
 import matplotlib.pyplot  as plt
 from scipy.optimize import linear_sum_assignment
 
@@ -104,7 +105,7 @@ if __name__ == "__main__":
     resnet_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer/CPU_resnet18_epoch4.pt"
     track_directory =   "/home/worklab/Desktop/detrac/DETRAC-all-data/MVI_20011"
     #track_directory =   "/home/worklab/Desktop/I-24 samples/cam_0"
-    det_step = 1               
+    det_step = 2               
     PLOT = True
     fsld_max = 10
     
@@ -192,13 +193,14 @@ if __name__ == "__main__":
     
         # 2. Detect, either with ResNet or Yolo
         start = time.time()
-        
-        if frame_num % det_step == 0:
-            frame = frame.to(device)
-            
-            time_metrics['gpu_load'] += time.time() - start
-            start = time.time()
+        frame = frame.to(device)
+        time_metrics['gpu_load'] += time.time() - start
 
+        start = time.time()
+        # detect with YOLO
+        if frame_num % det_step == 0:
+            FULL = True
+                        
             detections = detector.detect_tensor(frame).cpu()
             torch.cuda.synchronize(device)
             time_metrics['detect'] += time.time() - start
@@ -207,9 +209,44 @@ if __name__ == "__main__":
             detections = parse_detections(detections)
             
             time_metrics['parse'] += time.time() - start
-              
+             
+        # detect with ResNet    
         else:
-            pass
+            FULL = False
+            
+            # use predicted states to crop relevant portions of frame 
+            box_ids = []
+            box_list = []
+            for id in pre_locations:
+                box_ids.append(id)
+                box_list.append(pre_locations[id][:4])
+            boxes = np.array(box_list)
+            # convert xysr boxes into xmin xmax ymin ymax
+            new_boxes = np.zeros([len(boxes),5]) # first row of zeros is batch index (batch is size 0) for ROI align
+            new_boxes[:,1] = boxes[:,0] - boxes[:,2]
+            new_boxes[:,3] = boxes[:,0] + boxes[:,2]
+            new_boxes[:,2] = boxes[:,1] - boxes[:,2]*boxes[:,3]
+            new_boxes[:,4] = boxes[:,1] + boxes[:,2]*boxes[:,3]
+            boxes = torch.from_numpy(new_boxes).float().to(device)
+            
+            start = time.time()
+            crops = roi_align(frame.unsqueeze(0),boxes,(224,224))
+            print("ROI align took {}s".format(time.time() - start))
+            
+            # pass as batch to Localizer
+            start= time.time()
+            cls_out,reg_out = localizer(crops)
+            torch.cuda.synchronize()
+            print("Forward inference with localizer took {}s".format(time.time() - start))
+            
+            
+            # store class predictions
+            
+            
+            # map regressed bboxes directly to objects
+            
+            # updated fslds
+            
         
         
         # 3. Match, using Hungarian Algorithm        
