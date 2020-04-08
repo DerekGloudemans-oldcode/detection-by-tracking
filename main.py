@@ -102,7 +102,7 @@ if __name__ == "__main__":
 
     yolo_checkpoint =   "/home/worklab/Desktop/checkpoints/yolo/yolov3.weights"
     resnet_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer/resnet18_cpu.pt"
-    track_directory =   "/home/worklab/Desktop/detrac/DETRAC-train-data/MVI_20011"
+    track_directory =   "/home/worklab/Desktop/detrac/DETRAC-all-data/MVI_20011"
     det_step = 1               
     PLOT = True
     fsld_max = 5
@@ -130,7 +130,7 @@ if __name__ == "__main__":
     localizer = localizer.to(device)
     print("Detector and Localizer on {}.".format(device))
     
-    tracker = Torch_KF("cpu",mod_err = 1, meas_err = 1)
+    tracker = Torch_KF("cpu",mod_err = 1, meas_err = 3, state_err = 100)
 
      
     #%% 2. Loop Setup
@@ -177,8 +177,11 @@ if __name__ == "__main__":
         start = time.time()
 
         try:
+            pre_locations = tracker.objs()
+            print(pre_locations[0])
             tracker.predict()
             pre_locations = tracker.objs()
+            print(pre_locations[0])
         except:
             # in the case that there are no active objects will throw exception
             pre_locations = []
@@ -219,7 +222,7 @@ if __name__ == "__main__":
         pre_loc = np.array(pre_loc)
         
         # matchings[i] = [a,b] where a is index of pre_loc and b is index of detection
-        matchings = match_hungarian(pre_loc,detections[:,:4])
+        matchings = match_hungarian(pre_loc,detections[:,:4],iou_cutoff = 0.2)
         
         time_metrics['match'] += time.time() - start
 
@@ -311,17 +314,18 @@ if __name__ == "__main__":
                 # plot bbox
                 label = "Object {}".format(id)
                 bbox = post_locations[id][:4]
+                if sum(bbox) != 0:
 
-                color = (0.7,0.7,0.4) #colors[int(obj.cls)]
-                c1 = (int(bbox[0]-bbox[3]*bbox[2]/2),int(bbox[1]-bbox[2]/2))
-                c2 =  (int(bbox[0]+bbox[3]*bbox[2]/2),int(bbox[1]+bbox[2]/2))
-                cv2.rectangle(im,c1,c2,color,1)
-                
-                # plot label
-                t_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_PLAIN,1 , 1)[0]
-                c2 = c1[0] + t_size[0] + 3, c1[1] + t_size[1] + 4
-                cv2.rectangle(im, c1, c2,color, -1)
-                cv2.putText(im, label, (c1[0], c1[1] + t_size[1] + 4), cv2.FONT_HERSHEY_PLAIN,1, [225,255,255], 1);
+                    color = (0.7,0.7,0.4) #colors[int(obj.cls)]
+                    c1 = (int(bbox[0]-bbox[3]*bbox[2]/2),int(bbox[1]-bbox[2]/2))
+                    c2 =  (int(bbox[0]+bbox[3]*bbox[2]/2),int(bbox[1]+bbox[2]/2))
+                    cv2.rectangle(im,c1,c2,color,1)
+                    
+                    # plot label
+                    t_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_PLAIN,1 , 1)[0]
+                    c2 = c1[0] + t_size[0] + 3, c1[1] + t_size[1] + 4
+                    cv2.rectangle(im, c1, c2,color, -1)
+                    cv2.putText(im, label, (c1[0], c1[1] + t_size[1] + 4), cv2.FONT_HERSHEY_PLAIN,1, [225,255,255], 1);
             
             for det in detections:
                 bbox = det[:4]
@@ -335,7 +339,7 @@ if __name__ == "__main__":
             cv2.waitKey(1)
             
             
-            
+        print(len(post_locations))    
         print("Finished frame {}".format(frame_num))
         frame_num += 1
         torch.cuda.empty_cache()
@@ -347,7 +351,7 @@ if __name__ == "__main__":
     for key in time_metrics:
         total_time += time_metrics[key]
     
-    print("Total Framerate: {:.2f} fps".format(n_frames/total_time))
+    print("\n\nTotal Framerate: {:.2f} fps".format(n_frames/total_time))
     print("---------- per operation ----------")
     for key in time_metrics:
         print("{:.3f}s ({:.2f}%) on {}".format(time_metrics[key],time_metrics[key]/total_time*100,key))

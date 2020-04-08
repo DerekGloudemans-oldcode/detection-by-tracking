@@ -48,7 +48,7 @@ class Torch_KF(object):
         self.F = torch.eye(state_size).float()
         self.F[[0,1,2],[4,5,6]] = self.t
         self.H[:4,:4] = torch.eye(4)
-        self.Q = torch.eye(state_size).unsqueeze(0) * mod_err
+        self.Q = torch.eye(state_size).unsqueeze(0) * mod_err                     #+ 1
         self.R = torch.eye(meas_size).unsqueeze(0) * meas_err
         
         self.F = self.F.to(device)
@@ -66,7 +66,7 @@ class Torch_KF(object):
         obj_ids - list of length n with unique obj_id (int) for each detection
         """
         
-        newX = torch.zeros((len(detections),self.state_size))
+        newX = torch.zeros((len(detections),self.state_size)) 
         newX[:,:4] = torch.from_numpy(detections).to(self.device)
         newP = self.P0.repeat(len(obj_ids),1,1)
 
@@ -110,15 +110,16 @@ class Torch_KF(object):
         """
         Uses KF to propagate object locations
         """
-        
+        ### Neeed to figure out whether to invert F for updating
         
         # update X --> X = XF--> [n,7] x [7,7] = [n,7]
-        self.X = torch.mm(self.X,self.F) 
+        self.X = torch.mm(self.X,self.F.transpose(0,1)) 
         
-        # update P --> P = FPF^(-1) + Q
-        step1 = torch.mul(self.F,self.P)
-        step2 = self.F.inverse()
-        step3 = torch.mul(step1,step2)
+        # update P --> P = FPF^(-1) + Q --> [nx7x7] = [nx7x7] bx [nx7x7] bx [nx7x7] + [n+7x7]
+        F_rep = self.F.unsqueeze(0).repeat(len(self.P),1,1)
+        step1 = torch.bmm(F_rep,self.P)
+        step2 = F_rep.transpose(1,2)
+        step3 = torch.bmm(step1,step2)
         step4 = self.Q.repeat(len(self.P),1,1)
         self.P = step3 + step4
         
@@ -139,7 +140,7 @@ class Torch_KF(object):
         z = torch.from_numpy(detections).to(self.device)
         y = z - torch.mm(X_up, self.H.transpose(0,1))
         
-        # covariance innovaton --> HPHt + R --> [mx4x4] = [mx4x7] bx [mx7x7] bx [mx4x7]t + [mx4x4]
+        # covariance innovation --> HPHt + R --> [mx4x4] = [mx4x7] bx [mx7x7] bx [mx4x7]t + [mx4x4]
         # where bx is batch matrix multiplication broadcast along dim 0
         # in this case, S = [m,4,4]
         H_rep = self.H.unsqueeze(0).repeat(len(P_up),1,1)
