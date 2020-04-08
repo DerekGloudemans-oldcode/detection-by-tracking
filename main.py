@@ -101,12 +101,18 @@ if __name__ == "__main__":
     #%% 1. Set up models, etc.
 
     yolo_checkpoint =   "/home/worklab/Desktop/checkpoints/yolo/yolov3.weights"
-    resnet_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer/resnet18_cpu.pt"
+    resnet_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer/CPU_resnet18_epoch4.pt"
     track_directory =   "/home/worklab/Desktop/detrac/DETRAC-all-data/MVI_20011"
     #track_directory =   "/home/worklab/Desktop/I-24 samples/cam_0"
     det_step = 1               
     PLOT = True
     fsld_max = 10
+    
+    
+    # CUDA for PyTorch
+    use_cuda = torch.cuda.is_available()
+    device = torch.device("cuda:0" if use_cuda else "cpu")
+    torch.cuda.empty_cache() 
     
     # get CNNs
     try:
@@ -121,14 +127,11 @@ if __name__ == "__main__":
             )
         
         localizer = ResNet_Localizer()
-        #localizer,_,_,all_metrics = load_model(resnet_checkpoint, localizer, None)
-        
-    
-    # CUDA for PyTorch
-    use_cuda = torch.cuda.is_available()
-    device = torch.device("cuda:0" if use_cuda else "cpu")
-    torch.cuda.empty_cache() 
-    localizer = localizer.to(device)
+        cp = torch.load(resnet_checkpoint)
+        localizer.load_state_dict(cp['model_state_dict']) 
+        localizer = localizer.to(device)
+
+
     print("Detector and Localizer on {}.".format(device))
     
     tracker = Torch_KF("cpu",mod_err = 1, meas_err = 3, state_err = 100)
