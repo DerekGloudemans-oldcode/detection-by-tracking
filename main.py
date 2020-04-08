@@ -103,9 +103,10 @@ if __name__ == "__main__":
     yolo_checkpoint =   "/home/worklab/Desktop/checkpoints/yolo/yolov3.weights"
     resnet_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer/resnet18_cpu.pt"
     track_directory =   "/home/worklab/Desktop/detrac/DETRAC-all-data/MVI_20011"
+    #track_directory =   "/home/worklab/Desktop/I-24 samples/cam_0"
     det_step = 1               
     PLOT = True
-    fsld_max = 5
+    fsld_max = 10
     
     # get CNNs
     try:
@@ -177,11 +178,8 @@ if __name__ == "__main__":
         start = time.time()
 
         try:
-            pre_locations = tracker.objs()
-            print(pre_locations[0])
             tracker.predict()
             pre_locations = tracker.objs()
-            print(pre_locations[0])
         except:
             # in the case that there are no active objects will throw exception
             pre_locations = []
@@ -317,8 +315,8 @@ if __name__ == "__main__":
                 if sum(bbox) != 0:
 
                     color = (0.7,0.7,0.4) #colors[int(obj.cls)]
-                    c1 = (int(bbox[0]-bbox[3]*bbox[2]/2),int(bbox[1]-bbox[2]/2))
-                    c2 =  (int(bbox[0]+bbox[3]*bbox[2]/2),int(bbox[1]+bbox[2]/2))
+                    c1 =  (int(bbox[0]-bbox[2]/2),int(bbox[1]-bbox[3]*bbox[2]/2))
+                    c2 =  (int(bbox[0]+bbox[2]/2),int(bbox[1]+bbox[3]*bbox[2]/2))
                     cv2.rectangle(im,c1,c2,color,1)
                     
                     # plot label
@@ -330,16 +328,16 @@ if __name__ == "__main__":
             for det in detections:
                 bbox = det[:4]
                 color = (0.4,0.4,0.7) #colors[int(obj.cls)]
-                c1 = (int(bbox[0]-bbox[3]*bbox[2]/2),int(bbox[1]-bbox[2]/2))
-                c2 =  (int(bbox[0]+bbox[3]*bbox[2]/2),int(bbox[1]+bbox[2]/2))
+                c1 =  (int(bbox[0]-bbox[2]/2),int(bbox[1]-bbox[2]*bbox[3]/2))
+                c2 =  (int(bbox[0]+bbox[2]/2),int(bbox[1]+bbox[2]*bbox[3]/2))
                 cv2.rectangle(im,c1,c2,color,1)
             
+            #im = cv2.resize(im, (1920,1080))
             cv2.imshow("window",im)
             time_metrics['plot'] += time.time() - start
             cv2.waitKey(1)
             
             
-        print(len(post_locations))    
         print("Finished frame {}".format(frame_num))
         frame_num += 1
         torch.cuda.empty_cache()
