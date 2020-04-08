@@ -97,6 +97,53 @@ def match_hungarian(first,second,iou_cutoff = 0.5):
             out_matchings.append([i,matchings[i]])
     return np.array(out_matchings)   
     
+def test_outputs(bboxes,crops):
+    # define figure subplot grid
+    batch_size = len(crops)
+    row_size = min(batch_size,8)
+    fig, axs = plt.subplots((batch_size+row_size-1)//row_size, row_size, constrained_layout=True)
+    
+    for i in range(0,len(crops)):
+        
+        # get image
+        im   = crops[i].data.cpu().numpy().transpose((1,2,0))
+        mean = np.array([0.485, 0.456, 0.406])
+        std  = np.array([0.229, 0.224, 0.225])
+        im   = std * im + mean
+        im   = np.clip(im, 0, 1)
+        
+        # get predictions
+        
+        bbox = bboxes[i].data.cpu().numpy()
+        
+        wer = 3
+        imsize = 224
+        
+        # transform bbox coords back into im pixel coords
+        bbox = (bbox* 224*wer - 224*(wer-1)/2).astype(int)
+        # plot pred bbox
+        im = cv2.rectangle(im,(bbox[0],bbox[1]),(bbox[2],bbox[3]),(0.1,0.6,0.9),2)
+       
+       
+
+        im = im.get()
+        
+        # title with class preds and gt
+        label = "{} -> ({})".format(" ", " ")
+
+        if batch_size <= 8:
+            axs[i].imshow(im)
+            axs[i].set_title(label)
+            axs[i].set_xticks([])
+            axs[i].set_yticks([])
+        else:
+            axs[i//row_size,i%row_size].imshow(im)
+            axs[i//row_size,i%row_size].set_title(label)
+            axs[i//row_size,i%row_size].set_xticks([])
+            axs[i//row_size,i%row_size].set_yticks([])
+        plt.pause(.001)    
+    #plt.close()
+
     
 if __name__ == "__main__":
     #%% 1. Set up models, etc.
@@ -105,9 +152,9 @@ if __name__ == "__main__":
     resnet_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer/CPU_resnet18_epoch4.pt"
     track_directory =   "/home/worklab/Desktop/detrac/DETRAC-all-data/MVI_20011"
     #track_directory =   "/home/worklab/Desktop/I-24 samples/cam_0"
-    det_step = 2               
+    det_step = 5               
     PLOT = True
-    fsld_max = 10
+    fsld_max = 6
     
     
     # CUDA for PyTorch
@@ -135,7 +182,7 @@ if __name__ == "__main__":
 
     print("Detector and Localizer on {}.".format(device))
     
-    tracker = Torch_KF("cpu",mod_err = 1, meas_err = 3, state_err = 100)
+    tracker = Torch_KF("cpu",mod_err = 1, meas_err = 5, state_err = 100)
 
      
     #%% 2. Loop Setup
@@ -161,7 +208,10 @@ if __name__ == "__main__":
     frame_num = 0               # iteration counter   
     next_obj_id = 0             # next id for a new object (incremented during tracking)
     fsld = {}                   # fsld[id] stores frames since last detected for object id
+    
     all_tracks = {}
+    all_classes = {}
+    
     time_metrics = {
         "gpu_load":0,
         "predict":0,
@@ -217,16 +267,19 @@ if __name__ == "__main__":
             # use predicted states to crop relevant portions of frame 
             box_ids = []
             box_list = []
+            
             for id in pre_locations:
                 box_ids.append(id)
                 box_list.append(pre_locations[id][:4])
             boxes = np.array(box_list)
             # convert xysr boxes into xmin xmax ymin ymax
             new_boxes = np.zeros([len(boxes),5]) # first row of zeros is batch index (batch is size 0) for ROI align
-            new_boxes[:,1] = boxes[:,0] - boxes[:,2]
-            new_boxes[:,3] = boxes[:,0] + boxes[:,2]
-            new_boxes[:,2] = boxes[:,1] - boxes[:,2]*boxes[:,3]
-            new_boxes[:,4] = boxes[:,1] + boxes[:,2]*boxes[:,3]
+            box_scales = np.max(np.stack((boxes[:,2],boxes[:,2]*boxes[:,3]),axis = 1),axis = 1)
+            # use either s or s x r for both dimensions, whichever is larger
+            new_boxes[:,1] = boxes[:,0] - box_scales/2 #boxes[:,2]
+            new_boxes[:,3] = boxes[:,0] + box_scales/2 #boxes[:,2]
+            new_boxes[:,2] = boxes[:,1] - box_scales/2 #boxes[:,2]*boxes[:,3]
+            new_boxes[:,4] = boxes[:,1] + box_scales/2 #boxes[:,2]*boxes[:,3]
             boxes = torch.from_numpy(new_boxes).float().to(device)
             
             start = time.time()
@@ -239,89 +292,114 @@ if __name__ == "__main__":
             torch.cuda.synchronize()
             print("Forward inference with localizer took {}s".format(time.time() - start))
             
+            if False:
+                test_outputs(reg_out,crops)
             
             # store class predictions
+            _,cls_preds = torch.max(cls_out,1)
+            for i in range(len(cls_preds)):
+                all_classes[box_ids[i]].append(cls_preds[i])
             
-            
-            # map regressed bboxes directly to objects
-            
-            # updated fslds
-            
-        
-        
-        # 3. Match, using Hungarian Algorithm        
-        start = time.time()
-        
-        pre_ids = []
-        pre_loc = []
-        for id in pre_locations:
-            pre_ids.append(id)
-            pre_loc.append(pre_locations[id])
-        pre_loc = np.array(pre_loc)
-        
-        # matchings[i] = [a,b] where a is index of pre_loc and b is index of detection
-        matchings = match_hungarian(pre_loc,detections[:,:4],iou_cutoff = 0.2)
-        
-        time_metrics['match'] += time.time() - start
+            # these detections are relative to crops - convert to global image coords
+            wer = 3
+            detections = (reg_out* 224*wer - 224*(wer-1)/2)
+            detections = detections.data.cpu()
 
-        
-        # 4. Update tracked objects
-        start = time.time()
+            detections[:,0] = detections[:,0]*box_scales/224 + new_boxes[:,1]
+            detections[:,2] = detections[:,2]*box_scales/224 + new_boxes[:,1]
+            detections[:,1] = detections[:,1]*box_scales/224 + new_boxes[:,2]
+            detections[:,3] = detections[:,3]*box_scales/224 + new_boxes[:,2]
 
-        update_array = np.zeros([len(matchings),4])
-        update_ids = []
-        for i in range(len(matchings)):
-            a = matchings[i,0] # index of pre_loc
-            b = matchings[i,1] # index of detections
-           
-            update_array[i,:] = detections[b,:4]
-            update_ids.append(pre_ids[a])
-            fsld[pre_ids[a]] = 0 # fsld = 0 since this id was detected this frame
+            # convert into xysr form ----- Convert to cpu()
+            output = np.zeros([len(detections),4])
+            output[:,0] = (detections[:,0] + detections[:,2]) / 2.0
+            output[:,1] = (detections[:,1] + detections[:,3]) / 2.0
+            output[:,2] = (detections[:,2] - detections[:,0])
+            output[:,3] = (detections[:,3] - detections[:,1]) / output[:,2]
+            detections = output
+            
+            # map regressed bboxes directly to objects for update step
+            tracker.update(output,box_ids)
+            
+            #this actually causes problems - objects can't be lost if updated fslds
+            #for id in box_ids:
+            #    fsld[id] = 0
         
-        if len(update_array) > 0:    
-            tracker.update(update_array,update_ids)
-          
-            time_metrics['update'] += time.time() - start
+        if FULL:
+            # 3. Match, using Hungarian Algorithm        
+            start = time.time()
+            
+            pre_ids = []
+            pre_loc = []
+            for id in pre_locations:
+                pre_ids.append(id)
+                pre_loc.append(pre_locations[id])
+            pre_loc = np.array(pre_loc)
+            
+            # matchings[i] = [a,b] where a is index of pre_loc and b is index of detection
+            matchings = match_hungarian(pre_loc,detections[:,:4],iou_cutoff = 0.2)
+            
+            time_metrics['match'] += time.time() - start
+    
+            
+            # 4. Update tracked objects
+            start = time.time()
+    
+            update_array = np.zeros([len(matchings),4])
+            update_ids = []
+            for i in range(len(matchings)):
+                a = matchings[i,0] # index of pre_loc
+                b = matchings[i,1] # index of detections
+               
+                update_array[i,:] = detections[b,:4]
+                update_ids.append(pre_ids[a])
+                fsld[pre_ids[a]] = 0 # fsld = 0 since this id was detected this frame
+            
+            if len(update_array) > 0:    
+                tracker.update(update_array,update_ids)
               
-        
-        # 5. For each detection not in matchings, add a new object
-        start = time.time()
-        
-        new_array = np.zeros([len(detections) - len(matchings),4])
-        new_ids = []
-        cur_row = 0
-        for i in range(len(detections)):
-            if len(matchings) == 0 or i not in matchings[:,1]:
-                
-                new_ids.append(next_obj_id)
-                new_array[cur_row,:] = detections[i,:4]
-
-                fsld[next_obj_id] = 0
-                all_tracks[next_obj_id] = np.zeros([n_frames,7])
-                
-                next_obj_id += 1
-                cur_row += 1
-       
-        if len(new_array) > 0:        
-            tracker.add(new_array,new_ids)
-        
-        
-        # 6. For each untracked object, increment fsld        
-        for i in range(len(pre_ids)):
-            if i not in matchings[:,0]:
-                fsld[pre_ids[i]] += 1
-                
-        
-        # 7. remove lost objects
-        removals = []
-        for id in pre_ids:
-            if fsld[id] > fsld_max:
-                removals.append(id)
-       
-        if len(removals) > 0:
-            tracker.remove(removals)    
-        
-        time_metrics['add and remove'] += time.time() - start
+                time_metrics['update'] += time.time() - start
+                  
+            
+            # 5. For each detection not in matchings, add a new object
+            start = time.time()
+            
+            new_array = np.zeros([len(detections) - len(matchings),4])
+            new_ids = []
+            cur_row = 0
+            for i in range(len(detections)):
+                if len(matchings) == 0 or i not in matchings[:,1]:
+                    
+                    new_ids.append(next_obj_id)
+                    new_array[cur_row,:] = detections[i,:4]
+    
+                    fsld[next_obj_id] = 0
+                    all_tracks[next_obj_id] = np.zeros([n_frames,7])
+                    all_classes[next_obj_id] = []
+                    
+                    next_obj_id += 1
+                    cur_row += 1
+           
+            if len(new_array) > 0:        
+                tracker.add(new_array,new_ids)
+            
+            
+            # 6. For each untracked object, increment fsld        
+            for i in range(len(pre_ids)):
+                if i not in matchings[:,0]:
+                    fsld[pre_ids[i]] += 1
+                    
+            
+            # 7. remove lost objects
+            removals = []
+            for id in pre_ids:
+                if fsld[id] > fsld_max:
+                    removals.append(id)
+           
+            if len(removals) > 0:
+                tracker.remove(removals)    
+            
+            time_metrics['add and remove'] += time.time() - start
 
         
         # 8. Get all object locations and store in output dict
