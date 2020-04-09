@@ -43,6 +43,13 @@ def parse_detections(detections):
     output[:,4] =  detections[:,6]
     output[:,5] =  detections[:,5]
     
+    prune_output = []
+    for i in range(len(output)):
+        if int(output[i,4]) in [2,3,5,7]:
+            prune_output.append(i)
+    
+    output = output[prune_output,:]
+    
     return output
 
 def match_hungarian(first,second,iou_cutoff = 0.5):
@@ -142,7 +149,7 @@ def test_outputs(bboxes,crops):
             axs[i//row_size,i%row_size].set_xticks([])
             axs[i//row_size,i%row_size].set_yticks([])
         plt.pause(.001)    
-    #plt.close()
+    
 
     
 if __name__ == "__main__":
@@ -152,10 +159,10 @@ if __name__ == "__main__":
         yolo_checkpoint =   "/home/worklab/Desktop/checkpoints/yolo/yolov3.weights"
         resnet_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer/CPU_resnet18_epoch4.pt"
         track_directory =   "/home/worklab/Desktop/detrac/DETRAC-all-data/MVI_20011"
-        track_directory =   "/home/worklab/Desktop/I-24 samples/cam_0"
-        det_step = 10               
+        #track_directory =   "/home/worklab/Desktop/I-24 samples/cam_0"
+        det_step = 1               
         PLOT = True
-        fsld_max = det_step 
+        fsld_max = det_step +3
         
         
         # CUDA for PyTorch
@@ -195,13 +202,28 @@ if __name__ == "__main__":
             files.sort()
             
         # open and parse images    
-        for f in files[0:100]:
-             im = Image.open(f)
-             im = F.to_tensor(im)
-             im = F.normalize(im,mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
-             #im = im.to(device)
-             frames.append(im)
+        for num, f in enumerate(files):
+             with Image.open(f) as im:
+                 
+                 if num % det_step == 0:   
+                     # convert to CV2 style image
+                     open_cv_image = np.array(im) 
+                     im = open_cv_image.copy() 
+                     original_im = im[:,:,[2,1,0]].copy()
+                     # new stuff
+                     dim = (im.shape[1], im.shape[0])
+                     im = cv2.resize(im, (1024,1024))
+                     im = im.transpose((2,0,1)).copy()
+                     im = torch.from_numpy(im).float().div(255.0).unsqueeze(0)
+                        
+                 else:
+                     # keep as tensor
+                     im = F.to_tensor(im)
+                     im = F.normalize(im,mean=[0.485, 0.456, 0.406],
+                                          std=[0.229, 0.224, 0.225])
+                     dim = None
+                 frames.append((im,dim,original_im))
+                 
         n_frames = len(frames)
          
         print("All frames loaded into memory")     
@@ -227,10 +249,11 @@ if __name__ == "__main__":
             "store":0,
             "plot":0
             }
+        
+        
         #%% 3. Main Loop
     
-    
-        for frame in frames:
+        for (frame,dim,original_im) in frames:
             
             # 1. Predict next object locations
             start = time.time()
@@ -248,6 +271,7 @@ if __name__ == "__main__":
             # 2. Detect, either with ResNet or Yolo
             start = time.time()
             frame = frame.to(device)
+            
             time_metrics['gpu_load'] += time.time() - start
     
             start = time.time()
@@ -255,7 +279,9 @@ if __name__ == "__main__":
             if frame_num % det_step == 0:
                 FULL = True
                             
-                detections = detector.detect_tensor(frame).cpu()
+                #detections,_ = detector.detect(frame,show = False, verbose = False)
+                detections = detector.detect2(frame,dim)
+                detections = detections.cpu()
                 torch.cuda.synchronize(device)
                 time_metrics['detect'] += time.time() - start
                 start = time.time()
@@ -268,6 +294,7 @@ if __name__ == "__main__":
             else:
                 FULL = False
                 
+                frame = frame.to(device)
                 start = time.time()
                 
                 # use predicted states to crop relevant portions of frame 
@@ -429,16 +456,24 @@ if __name__ == "__main__":
             start = time.time()
     
             if PLOT:
-                # convert tensor back to CV im
-                frame = frame.data.cpu().numpy()
-                im   = frame.transpose((1,2,0))
-                mean = np.array([0.485, 0.456, 0.406])
-                std  = np.array([0.229, 0.224, 0.225])
-                im   = std * im + mean
-                im   = np.clip(im, 0, 1)
-                im   = im[:,:,[2,1,0]]
-                im = im.copy()
-                
+                # if frame_num % det_step == 0:
+                #     im = frame.copy()
+                # else:
+                #     # convert tensor back to CV im
+                #     frame = frame.data.cpu().numpy()
+                #     im   = frame.transpose((1,2,0))
+                #     im   = im[:,:,[2,1,0]]
+                    
+                #     if frame_num % det_step == 0:
+                        
+                #     else:
+                #         mean = np.array([0.485, 0.456, 0.406])
+                #         std  = np.array([0.229, 0.224, 0.225])
+                #         im   = std * im + mean
+                #         im   = np.clip(im, 0, 1)
+                #     im = im.copy()
+                im = original_im.copy()/255.0
+
                 for id in post_locations:
                     # plot bbox
                     label = "Object {}".format(id)

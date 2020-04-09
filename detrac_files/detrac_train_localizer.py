@@ -372,7 +372,7 @@ class_dict = {
 if __name__ == "__main__":
     
     checkpoint_file = None
-    checkpoint_file = "/home/worklab/Desktop/checkpoints/detrac_localizer/best_resnet18_epoch4.pt"
+    checkpoint_file = "/home/worklab/Desktop/checkpoints/detrac_localizer/GPU_resnet18_epoch4.pt"
     patience = 3
 
     label_dir       = "/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3"

@@ -152,7 +152,7 @@ if __name__ == "__main__":
         yolo_checkpoint =   "/home/worklab/Desktop/checkpoints/yolo/yolov3.weights"
         resnet_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer/CPU_resnet18_epoch4.pt"
         track_directory =   "/home/worklab/Desktop/detrac/DETRAC-all-data/MVI_20011"
-        track_directory =   "/home/worklab/Desktop/I-24 samples/cam_0"
+        #track_directory =   "/home/worklab/Desktop/I-24 samples/cam_0"
         det_step = 10               
         PLOT = True
         fsld_max = det_step 
@@ -195,11 +195,14 @@ if __name__ == "__main__":
             files.sort()
             
         # open and parse images    
-        for f in files[0:100]:
-             im = Image.open(f)
-             im = F.to_tensor(im)
-             im = F.normalize(im,mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
+        for f in files:
+             with Image.open(f) as im:
+                 # convert to CV2 style image
+                 open_cv_image = np.array(im) 
+             im = open_cv_image[:, :, ::-1].copy() 
+             # im = F.to_tensor(im)
+             # im = F.normalize(im,mean=[0.485, 0.456, 0.406],
+             #                         std=[0.229, 0.224, 0.225])
              #im = im.to(device)
              frames.append(im)
         n_frames = len(frames)
@@ -247,7 +250,7 @@ if __name__ == "__main__":
         
             # 2. Detect, either with ResNet or Yolo
             start = time.time()
-            frame = frame.to(device)
+            #frame = frame.to(device)
             time_metrics['gpu_load'] += time.time() - start
     
             start = time.time()
@@ -255,7 +258,8 @@ if __name__ == "__main__":
             if frame_num % det_step == 0:
                 FULL = True
                             
-                detections = detector.detect_tensor(frame).cpu()
+                detections,_ = detector.detect(frame)
+                detections = detections.cpu()
                 torch.cuda.synchronize(device)
                 time_metrics['detect'] += time.time() - start
                 start = time.time()
