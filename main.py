@@ -152,8 +152,8 @@ if __name__ == "__main__":
         yolo_checkpoint =   "/home/worklab/Desktop/checkpoints/yolo/yolov3.weights"
         resnet_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer/CPU_resnet18_epoch4.pt"
         track_directory =   "/home/worklab/Desktop/detrac/DETRAC-all-data/MVI_20011"
-        track_directory =   "/home/worklab/Desktop/I-24 samples/cam_0"
-        det_step = 10               
+        #track_directory =   "/home/worklab/Desktop/I-24 samples/cam_0"
+        det_step = 1               
         PLOT = True
         fsld_max = det_step 
         
