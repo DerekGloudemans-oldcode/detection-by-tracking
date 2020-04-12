@@ -148,7 +148,7 @@ def train_model(model, optimizer, scheduler,losses,
                         
                         for loss_fn in losses['reg']:
                             loss_comp = loss_fn(reg_out.float(),reg_targets.float())
-                            loss += loss_comp
+                            loss += loss_comp * 2
                             each_loss.append(round(loss_comp.item()*100000)/100000.0)
                             
                         # apply each cls loss function
@@ -168,16 +168,17 @@ def train_model(model, optimizer, scheduler,losses,
                     count += 1
                     total_acc += acc
                     total_loss += loss.item()
+                    if count % 100 == 0:
+                        print("{} epoch {} batch {} -- Loss so far: {:03f} -- {}, {}, {}".format(phase,epoch,count,total_loss/count,each_loss[0],each_loss[1],each_loss[2]))
                     if count % 1000 == 0:
-                      print("{} epoch {} batch {} -- Loss so far: {:03f} -- {}, {}, {}".format(phase,epoch,count,total_loss/count,each_loss[0],each_loss[1],each_loss[2]))
-                      plot_batch(model,next(iter(dataloaders['train'])),class_dict)
+                        plot_batch(model,next(iter(dataloaders['train'])),class_dict)
                     
                     # periodically save best checkpoint
-                    if count % 10000 == 0:
+                    if count % 5000 == 0:
                         avg_loss = total_loss/count
                         if avg_loss < best_loss:
                             # save a checkpoint
-                            PATH = "/home/worklab/Desktop/checkpoints/detrac_localizer/resnet18_epoch{}_batch{}.pt".format(epoch,count)
+                            PATH = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain/resnet18_epoch{}_batch{}.pt".format(epoch,count)
                             torch.save({
                                 'epoch': epoch,
                                 'model_state_dict': model.state_dict(),
@@ -197,7 +198,7 @@ def train_model(model, optimizer, scheduler,losses,
 
                 if avg_loss < best_loss:
                     # save a checkpoint
-                    PATH = "/home/worklab/Desktop/checkpoints/detrac_localizer/resnet18_epoch{}.pt".format(epoch)
+                    PATH = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain/resnet18_epoch{}_end.pt".format(epoch)
                     torch.save({
                         'epoch': epoch,
                         'model_state_dict': model.state_dict(),
@@ -338,6 +339,25 @@ def plot_batch(model,batch,class_dict):
         plt.pause(.001)    
     #plt.close()
 
+def move_dual_checkpoint_to_cpu(model,optimizer,checkpoint):
+    model,optimizer,epoch,all_metrics = load_model(checkpoint_file, model, optimizer)
+    model = nn.DataParallel(model,device_ids = [0])
+    model = model.to(device)
+    
+    new_state_dict = {}
+    for key in model.state_dict():
+        new_state_dict[key.split("module.")[-1]] = model.state_dict()[key]
+    
+    new_checkpoint = checkpoint.split("resnet")[0] + "cpu_resnet18_epoch{}.pt".format(epoch)
+    
+    torch.save({
+        'epoch': epoch,
+        'model_state_dict': new_state_dict,
+        'optimizer_state_dict': optimizer.state_dict(),
+        "metrics": all_metrics
+        }, new_checkpoint)
+    
+
 class_dict = {
             'Sedan':0,
             'Hatchback':1,
@@ -371,8 +391,9 @@ class_dict = {
 #------------------------------ Main code here -------------------------------#
 if __name__ == "__main__":
     
-    checkpoint_file = None
-    checkpoint_file = "/home/worklab/Desktop/checkpoints/detrac_localizer/GPU_resnet18_epoch4.pt"
+    checkpoint_file = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain/resnet18_epoch8_end.pt"
+    #checkpoint_file = None
+
     patience = 3
 
     label_dir       = "/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3"
@@ -428,10 +449,10 @@ if __name__ == "__main__":
     print("Got dataloaders. {},{}".format(datasizes['train'],datasizes['val']))
     
     # 5. define stochastic gradient descent optimizer    
-    optimizer = optim.SGD(model.parameters(), lr=0.01,momentum = 0.1)
+    optimizer = optim.SGD(model.parameters(), lr=0.1,momentum = 0.1)
     
     # 6. decay LR by a factor of 0.1 every 7 epochs
-    exp_lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.3)
+    exp_lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.3)
     
     # 7. define start epoch for consistent labeling if checkpoint is reloaded
     start_epoch = -1

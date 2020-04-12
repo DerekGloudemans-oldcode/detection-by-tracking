@@ -103,7 +103,33 @@ def match_hungarian(first,second,iou_cutoff = 0.5):
         if matchings[i] != -1:
             out_matchings.append([i,matchings[i]])
     return np.array(out_matchings)   
+ 
+def match_greedy(first,second,threshold = 10):
+    """
+    performs  greedy best-first matching of objects between frames
+    inputs - N x 2 arrays of object x and y coordinates from different frames
+    output - M x 1 array where index i corresponds to the second frame object 
+    matched to the first frame object i
+    """
+
+    # find distances between first and second
+    dist = np.zeros([len(first),len(second)])
+    for i in range(0,len(first)):
+        for j in range(0,len(second)):
+            dist[i,j] = np.sqrt((first[i,0]-second[j,0])**2 + (first[i,1]-second[j,1])**2)
     
+    # select closest pair
+    matchings = np.zeros(len(first))-1
+    unflat = lambda x: (x//len(second), x %len(second))
+    while np.min(dist) < threshold:
+        min_f, min_s = unflat(np.argmin(dist))
+        #print(min_f,min_s,len(first),len(second),len(matchings),np.argmin(dist))
+        matchings[min_f] = min_s
+        dist[:,min_s] = np.inf
+        dist[min_f,:] = np.inf
+        
+    return np.ndarray.astype(matchings,int)    
+      
 def test_outputs(bboxes,crops):
     # define figure subplot grid
     batch_size = len(crops)
@@ -150,6 +176,8 @@ def test_outputs(bboxes,crops):
 def load_models(device):
     yolo_checkpoint =   "/home/worklab/Desktop/checkpoints/yolo/yolov3.weights"
     resnet_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer/CPU_resnet18_epoch4.pt"
+    resnet_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain/cpu_resnet18_epoch8_close.pt"
+
     detector = Darknet_Detector(
                 'pytorch_yolo_v3/cfg/yolov3.cfg',
                 yolo_checkpoint,
@@ -166,7 +194,7 @@ def load_models(device):
     print("Detector and Localizer on {}.".format(device))
     return detector,localizer
     
-def load_all_frames(track_directory): 
+def load_all_frames(track_directory,cutoff = -1): 
     print("Loading frames into memory.")
     files = []
     frames = []
@@ -175,7 +203,7 @@ def load_all_frames(track_directory):
         files.sort()
         
     # open and parse images    
-    for num, f in enumerate(files):
+    for num, f in enumerate(files[:cutoff]):
          with Image.open(f) as im:
              
              if num % det_step == 0:   
@@ -188,9 +216,10 @@ def load_all_frames(track_directory):
                  im = cv2.resize(im, (1024,1024))
                  im = im.transpose((2,0,1)).copy()
                  im = torch.from_numpy(im).float().div(255.0).unsqueeze(0)
-                    
+                 dim = torch.FloatTensor(dim).repeat(1,2)
              else:
                  # keep as tensor
+                 original_im = np.array(im)[:,:,[2,1,0]].copy()
                  im = F.to_tensor(im)
                  im = F.normalize(im,mean=[0.485, 0.456, 0.406],
                                       std=[0.229, 0.224, 0.225])
@@ -204,17 +233,59 @@ def load_all_frames(track_directory):
     print("All frames loaded into memory")
     return frames,n_frames
         
+def plot(im,detections,post_locations,all_classes,class_dict,frame = None):
+    im = im.copy()/255.0
+
+    for det in detections:
+        bbox = det[:4]
+        color = (0.4,0.4,0.7) #colors[int(obj.cls)]
+        c1 =  (int(bbox[0]-bbox[2]/2),int(bbox[1]-bbox[2]*bbox[3]/2))
+        c2 =  (int(bbox[0]+bbox[2]/2),int(bbox[1]+bbox[2]*bbox[3]/2))
+        cv2.rectangle(im,c1,c2,color,1)
+        
+    for id in post_locations:
+        # plot bbox
+        try:
+            most_common = np.argmax(all_classes[id])
+            cls = class_dict[most_common]
+        except:
+            cls = ""
+        label = "{} {}".format(cls,id)
+        bbox = post_locations[id][:4]
+        if sum(bbox) != 0:
+
+            color = (0.7,0.7,0.4) #colors[int(obj.cls)]
+            c1 =  (int(bbox[0]-bbox[2]/2),int(bbox[1]-bbox[3]*bbox[2]/2))
+            c2 =  (int(bbox[0]+bbox[2]/2),int(bbox[1]+bbox[3]*bbox[2]/2))
+            cv2.rectangle(im,c1,c2,color,1)
+            
+            # plot label
+            text_size = 0.8
+            t_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_PLAIN,text_size , 1)[0]
+            c2 = c1[0] + t_size[0] + 3, c1[1] + t_size[1] + 4
+            cv2.rectangle(im, c1, c2,color, -1)
+            cv2.putText(im, label, (c1[0], c1[1] + t_size[1] + 4), cv2.FONT_HERSHEY_PLAIN,text_size, [225,255,255], 1);
+    
+    
+    if im.shape[0] > 1920:
+        im = cv2.resize(im, (1920,1080))
+    cv2.imshow("window",im)
+    time_metrics['plot'] += time.time() - start
+    cv2.waitKey(1)
+    
+    if frame is not None:
+        cv2.imwrite("output/{}.png".format(str(frame).zfill(4)),im*255)
         
 if __name__ == "__main__":
    
         #%% 1. Set up models, etc.
-        track_directory =   "/home/worklab/Desktop/detrac/DETRAC-all-data/MVI_20011"
+        #track_directory =   "/home/worklab/Desktop/detrac/DETRAC-all-data/MVI_20011"
         track_directory =   "/home/worklab/Desktop/detrac/DETRAC-all-data/MVI_63544"
         #track_directory =   "/home/worklab/Desktop/I-24 samples/cam_0"
         
         # Tracking parameters and settings
-        det_step = 1             
-        fsld_max = det_step +3
+        det_step = 30         
+        fsld_max = det_step
         PLOT = True
         # CUDA for PyTorch
         use_cuda = torch.cuda.is_available()
@@ -228,12 +299,12 @@ if __name__ == "__main__":
         except:
             detector,localizer = load_models(device)
             
-        tracker = Torch_KF("cpu",mod_err = 1, meas_err = 5, state_err = 100)
+        tracker = Torch_KF("cpu",mod_err = 1, meas_err = 1, state_err = 1)
 
          
         #%% 2. Loop Setup
         
-        frames,n_frames = load_all_frames(track_directory)
+        frames,n_frames = load_all_frames(track_directory,cutoff = -1)
             
        
         frame_num = 0               # iteration counter   
@@ -253,6 +324,7 @@ if __name__ == "__main__":
             "detect":0,
             "parse":0,
             "match":0,
+            "match2":0,
             "update":0,
             "add and remove":0,
             "store":0,
@@ -264,7 +336,15 @@ if __name__ == "__main__":
     
         for (frame,dim,original_im) in frames:
             
-            # 1. Predict next object locations
+            # 1. Move image to GPU
+            start = time.time()
+            frame = frame.to(device,non_blocking = True)
+            if frame_num % det_step == 0:
+                dim = dim.to(device,non_blocking = True)                      
+            time_metrics['gpu_load'] += time.time() - start
+            
+    
+            # 2. Predict next object locations
             start = time.time()
             try: # in the case that there are no active objects will throw exception
 
@@ -274,22 +354,17 @@ if __name__ == "__main__":
                 pre_locations = []    
             time_metrics['predict'] += time.time() - start
         
-        
-            # 2. Move image to GPU
-            start = time.time()
-            frame = frame.to(device)
-            dim = torch.FloatTensor(dim).repeat(1,2).to(device)                      
-
-            time_metrics['gpu_load'] += time.time() - start
-    
-    
            
             if frame_num % det_step == 0: #Use YOLO
                 # 3a. YOLO detect                            
                 detections = detector.detect2(frame,dim)
-                detections = detections.cpu()
                 torch.cuda.synchronize(device)
                 time_metrics['detect'] += time.time() - start
+                
+                start = time.time()
+                detections = detections.cpu()
+                time_metrics['gpu_load'] += time.time() - start
+
                 
                 # postprocess detections
                 start = time.time()
@@ -308,9 +383,14 @@ if __name__ == "__main__":
                 
                 # matchings[i] = [a,b] where a is index of pre_loc and b is index of detection
                 matchings = match_hungarian(pre_loc,detections[:,:4],iou_cutoff = 0.2)
-                
                 time_metrics['match'] += time.time() - start
-        
+                
+                # try:
+                #     start = time.time()
+                #     matchings2 = match_greedy(pre_loc,detections[:,:4], threshold = 200)
+                #     time_metrics['match2'] += time.time() - start
+                # except:
+                #     print("failed")
                 
                 # 5a. Update tracked objects
                 start = time.time()
@@ -391,8 +471,10 @@ if __name__ == "__main__":
                 new_boxes = np.zeros([len(boxes),5]) 
 
                 # use either s or s x r for both dimensions, whichever is larger,so crop is square
-                box_scales = np.max(np.stack((boxes[:,2],boxes[:,2]*boxes[:,3]),axis = 1),axis = 1)
-               
+                #box_scales = np.max(np.stack((boxes[:,2],boxes[:,2]*boxes[:,3]),axis = 1),axis = 1)
+                box_scales = np.min(np.stack((boxes[:,2],boxes[:,2]*boxes[:,3]),axis = 1),axis = 1) #/2.0
+
+                
                 new_boxes[:,1] = boxes[:,0] - box_scales/2
                 new_boxes[:,3] = boxes[:,0] + box_scales/2 
                 new_boxes[:,2] = boxes[:,1] - box_scales/2 
@@ -442,7 +524,7 @@ if __name__ == "__main__":
                 
                 #lastly, replace scale and ratio with original values 
                 ## NOTE this is kind of a cludgey fix and ideally localizer should be better
-                output[:,2:4] = boxes[:,2:4]
+                output[:,2:4] = boxes[:,2:4] 
                 time_metrics['post_localize'] += time.time() - start
     
                 # 6b. Update tracker
@@ -450,7 +532,10 @@ if __name__ == "__main__":
                 # map regressed bboxes directly to objects for update step
                 tracker.update(output,box_ids)
                 time_metrics['update'] += time.time() - start
-            
+                
+                # 7b. increment all fslds
+                for i in range(len(pre_ids)):
+                        fsld[pre_ids[i]] += 1
             
             # 9. Get all object locations and store in output dict
             start = time.time()
@@ -463,45 +548,9 @@ if __name__ == "__main__":
             # 10. Plot
             start = time.time()
             if PLOT:
+                plot(original_im,detections,post_locations,all_classes,class_dict,frame = frame_num)
 
-                im = original_im.copy()/255.0
-
-                for det in detections:
-                    bbox = det[:4]
-                    color = (0.4,0.4,0.7) #colors[int(obj.cls)]
-                    c1 =  (int(bbox[0]-bbox[2]/2),int(bbox[1]-bbox[2]*bbox[3]/2))
-                    c2 =  (int(bbox[0]+bbox[2]/2),int(bbox[1]+bbox[2]*bbox[3]/2))
-                    cv2.rectangle(im,c1,c2,color,1)
-                    
-                for id in post_locations:
-                    # plot bbox
-                    try:
-                        most_common = np.argmax(all_classes[id])
-                        cls = class_dict[most_common]
-                    except:
-                        cls = ""
-                    label = "{} {}".format(cls,id)
-                    bbox = post_locations[id][:4]
-                    if sum(bbox) != 0:
-    
-                        color = (0.7,0.7,0.4) #colors[int(obj.cls)]
-                        c1 =  (int(bbox[0]-bbox[2]/2),int(bbox[1]-bbox[3]*bbox[2]/2))
-                        c2 =  (int(bbox[0]+bbox[2]/2),int(bbox[1]+bbox[3]*bbox[2]/2))
-                        cv2.rectangle(im,c1,c2,color,1)
-                        
-                        # plot label
-                        text_size = 0.8
-                        t_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_PLAIN,text_size , 1)[0]
-                        c2 = c1[0] + t_size[0] + 3, c1[1] + t_size[1] + 4
-                        cv2.rectangle(im, c1, c2,color, -1)
-                        cv2.putText(im, label, (c1[0], c1[1] + t_size[1] + 4), cv2.FONT_HERSHEY_PLAIN,text_size, [225,255,255], 1);
                 
-                
-                
-                #im = cv2.resize(im, (1920,1080))
-                cv2.imshow("window",im)
-                time_metrics['plot'] += time.time() - start
-                cv2.waitKey(1)
                 
             # increment frame counter 
             print("Finished frame {}".format(frame_num))

@@ -59,9 +59,9 @@ class Localize_Dataset(data.Dataset):
                         ]),
                 transforms.ToTensor(),
                 transforms.RandomErasing(p=0.2, scale=(0.02, 0.1), ratio=(0.3, 3.3), value=(0.485,0.456,0.406)),
-                transforms.RandomErasing(p=0.2, scale=(0.02, 0.2), ratio=(0.3, 3.3), value=(0.485,0.456,0.406)),
-                transforms.RandomErasing(p=0.1, scale=(0.02, 0.3), ratio=(0.3, 3.3), value=(0.485,0.456,0.406)),
-                transforms.RandomErasing(p=0.2, scale=(0.02, 0.1), ratio=(0.3, 3.3), value=(0.485,0.456,0.406)),
+                transforms.RandomErasing(p=0.2, scale=(0.02, 0.07), ratio=(0.3, 3.3), value=(0.485,0.456,0.406)),
+                transforms.RandomErasing(p=0.2, scale=(0.02, 0.05), ratio=(0.3, 3.3), value=(0.485,0.456,0.406)),
+                transforms.RandomErasing(p=0.1, scale=(0.02, 0.15), ratio=(0.3, 3.3), value=(0.485,0.456,0.406)),
                 transforms.RandomErasing(p=0.2, scale=(0.02, 0.1), ratio=(0.3, 3.3), value=(0.485,0.456,0.406)),
 
                 transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -124,12 +124,24 @@ class Localize_Dataset(data.Dataset):
         # copy so that original coordinates aren't overwritten
         bbox = label["bbox"].copy()
         
-        buffer =  max(0,np.random.normal(40,10))
+        # randomly shift the center of the crop
+        shift_scale = 200
+        x_shift = np.random.normal(0,im.size[0]/shift_scale)
+        y_shift = np.random.normal(0,im.size[1]/shift_scale)
+        #x_shift = 0
+        #y_shift = 0
+        
+        buffer  = min(bbox[2]-bbox[0],bbox[3]-bbox[1])/3# max(-5,np.random.normal(70,im.size[1]/shift_scale))
         # note may have indexed these wrongly
         minx = max(0,bbox[0]-buffer)
         miny = max(0,bbox[1]-buffer)
         maxx = min(im.size[0],bbox[2]+buffer)
         maxy = min(im.size[1],bbox[3]+buffer)
+    
+        minx = minx + x_shift
+        maxx = maxx + x_shift
+        miny = miny + y_shift
+        maxy = maxy + y_shift
     
         im_crop = F.crop(im,miny,minx,maxy-miny,maxx-minx)
         del im 
@@ -138,15 +150,22 @@ class Localize_Dataset(data.Dataset):
         bbox[1] = bbox[1] - miny
         bbox[2] = bbox[2] - minx
         bbox[3] = bbox[3] - miny
-                
-        #im_crop= im
-       
+         
+        orig_size = im_crop.size
+        im_crop = F.resize(im_crop, (224,224))
+        
+        bbox[0] = bbox[0] * 224/orig_size[0]
+        bbox[2] = bbox[2] * 224/orig_size[0]
+        bbox[1] = bbox[1] * 224/orig_size[1]
+        bbox[3] = bbox[3] * 224/orig_size[1]
+        
         # apply random affine transformation
         y = np.zeros(5)
         y[0:4] = bbox
         y[4] = label["class_num"]
         
         im_crop,y = self.random_affine_crop(im_crop,y)
+        
         # convert image and label to tensors
         im_t = self.im_tf(im_crop)
         return im_t, y
@@ -165,12 +184,14 @@ class Localize_Dataset(data.Dataset):
         """
     
         #define parameters for random transform
-        scale = min(max_scaling,max(random.gauss(0.5,1),imsize/min(im.size))) # verfify that scale will at least accomodate crop size
+        scale2 = min(max_scaling,max(random.gauss(0.5,1),imsize/min(im.size))) +0.5 # verfify that scale will at least accomodate crop size
+        scale = random.random()*2 + 0.8
+        
         shear = 0# (random.random()-0.5)*30 #angle
         rotation = (random.random()-0.5) * 30 #angle
         
         # transform matrix
-        im = transforms.functional.affine(im,rotation,(0,0),scale,shear)
+        im = transforms.functional.affine(im,rotation,(0,0),scale,shear,fillcolor = (int(0.485*255),int(0.456*255),int(255*0.406)))
         (xsize,ysize) = im.size
         
         # only transform coordinates for positive examples (negatives are [0,0,0,0,0])
@@ -213,14 +234,12 @@ class Localize_Dataset(data.Dataset):
                 y[2] = y[2] - xdiff*tighten
                 y[3] = y[3] - ydiff*tighten
             
-        # get crop location with normal distribution at image center
-        crop_x = int(random.gauss(im.size[0]/2,xsize/scale)-imsize/2)
-        crop_y = int(random.gauss(im.size[1]/2,ysize/scale)-imsize/2)
+        # get center of crop location
+        crop_x = int(im.size[0]/2)
+        crop_y = int(im.size[1]/2)
         
-        crop_x = int(random.gauss((y[2]+y[0])/2 , 50))
-        crop_y = int(random.gauss((y[1]+y[3])/2 , 50))
-        
-
+        #crop_x = int(np.random.normal((y[2]+y[0])/2 , 50))
+        #crop_y = int(np.random.normal((y[1]+y[3])/2 , 50))
         
         # move crop if too close to edge
         pad = 0
@@ -237,7 +256,6 @@ class Localize_Dataset(data.Dataset):
         # This is done to get a uniform scale and good pixel fill 
 #        im = transforms.functional.resize(im,224)
 #        y[0:4] = y[0:4] * 224/imsize
-        
         # transform bbox points into cropped coords
         y[0] = y[0] - crop_x
         y[1] = y[1] - crop_y
