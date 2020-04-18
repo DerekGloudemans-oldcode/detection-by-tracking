@@ -10,6 +10,7 @@ import numpy as np
 import random 
 import time
 import math
+import _pickle as pickle
 random.seed = 0
 
 import cv2
@@ -194,7 +195,7 @@ def load_models(device):
     print("Detector and Localizer on {}.".format(device))
     return detector,localizer
     
-def load_all_frames(track_directory,cutoff = -1): 
+def load_all_frames(track_directory,cutoff = None): 
     print("Loading frames into memory.")
     files = []
     frames = []
@@ -203,7 +204,7 @@ def load_all_frames(track_directory,cutoff = -1):
         files.sort()
         
     # open and parse images    
-    for num, f in enumerate(files[:cutoff]):
+    for num, f in enumerate(files):
          with Image.open(f) as im:
              
              if num % det_step == 0:   
@@ -227,6 +228,8 @@ def load_all_frames(track_directory,cutoff = -1):
                  
                  # store preprocessed image, dimensions and original image
              frames.append((im,dim,original_im))
+             if cutoff is not None and num > cutoff:
+                 break
              
     n_frames = len(frames)
      
@@ -304,7 +307,7 @@ if __name__ == "__main__":
          
         #%% 2. Loop Setup
         
-        frames,n_frames = load_all_frames(track_directory,cutoff = -1)
+        frames,n_frames = load_all_frames(track_directory,cutoff = None)
             
        
         frame_num = 0               # iteration counter   
@@ -568,3 +571,27 @@ if __name__ == "__main__":
         print("---------- per operation ----------")
         for key in time_metrics:
             print("{:.3f}s ({:.2f}%) on {}".format(time_metrics[key],time_metrics[key]/total_time*100,key))
+    
+    
+        final_output = []
+        for frame in range(n_frames):
+            frame_objs = []
+            
+            for id in all_tracks:
+                bbox = all_tracks[id][frame]
+                if bbox[0] != 0:
+                    obj_dict = {}
+                    obj_dict["id"] = id
+                    obj_dict["class_num"] = np.argmax(all_classes[id])
+                    x0 = bbox[0] - bbox[2]/2.0
+                    x1 = bbox[0] + bbox[2]/2.0
+                    y0 = bbox[1] - bbox[2]*bbox[3]/2.0
+                    y1 = bbox[1] + bbox[2]*bbox[3]/2.0
+                    obj_dict["bbox"] = np.array([x0,y0,x1,y1])
+                    
+                    frame_objs.append(obj_dict)
+            
+            final_output.append(frame_objs)
+        save_file = os.path.join("preds_temp",track_directory.split('/')[-1]+"_preds.cpkl")
+        with open(save_file,"wb") as f:
+            pickle.dump(final_output,f)
