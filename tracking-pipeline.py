@@ -279,8 +279,8 @@ def plot(im,detections,post_locations,all_classes,class_dict,frame = None):
 if __name__ == "__main__":
    
         #%% 1. Set up models, etc.
-        #track_directory =   "/home/worklab/Desktop/detrac/DETRAC-all-data/MVI_20011"
-        track_directory =   "/home/worklab/Desktop/detrac/DETRAC-all-data/MVI_63544"
+        track_directory =   "/home/worklab/Desktop/detrac/DETRAC-all-data/MVI_20011"
+        #track_directory =   "/home/worklab/Desktop/detrac/DETRAC-all-data/MVI_63544"
         #track_directory =   "/home/worklab/Desktop/I-24 samples/cam_0"
         
         # Tracking parameters and settings
