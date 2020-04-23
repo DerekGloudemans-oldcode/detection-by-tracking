@@ -19,7 +19,7 @@ import motmetrics
 import numpy as np
 import xml.etree.ElementTree as ET
 import _pickle as pickle
-
+import matplotlib.pyplot as plt
 
 def parse_labels(label_file):
         """
@@ -115,7 +115,17 @@ def parse_labels(label_file):
                 }
         return all_boxes, sequence_metadata
 
-def evaluate_mot(preds,gts):
+def test_regions(regions,x,y):
+    """
+    Determines whether point (x,y) falls within any of regions
+    """
+    
+    for region in regions:
+        if x > region[0] and x < region[2] and y > region[1] and y < region[3]:
+            return True
+    return False
+
+def evaluate_mot(preds,gts,ignored_regions = [],threshold = 100):
     """
     Description:
     -----------
@@ -144,9 +154,15 @@ def evaluate_mot(preds,gts):
     for frame in range(len(gts)):
         # get gts in desired format
         gt = gts[frame]
-        gt_ids = [] # object ideas for each object in this frame
+        gt_ids = [] # object ids for each object in this frame
         for obj in gt:
-            gt_ids.append(obj["id"])
+            
+            # gx = (obj["bbox"][0] + obj['bbox'][2]) /2.0
+            # gy = (obj["bbox"][1] + obj['bbox'][3]) /2.0
+            # exclude = test_regions(ignored_regions,gx,gy)
+            
+            # if not exclude:
+                gt_ids.append(obj["id"])
         gt_ids = np.array(gt_ids)
         
         
@@ -154,7 +170,14 @@ def evaluate_mot(preds,gts):
         pred = preds[frame]
         pred_ids = [] # object ids for each object in this frame
         for obj in pred:
-            pred_ids.append(obj["id"])
+            
+             # pred object center
+            # px = (obj["bbox"][0] + obj['bbox'][2]) /2.0
+            # py = (obj["bbox"][1] + obj['bbox'][3]) /2.0
+            # exclude = test_regions(ignored_regions,px,py)
+            
+            # if not exclude:
+                pred_ids.append(obj["id"])
         pred_ids = np.array(pred_ids)
         
         # get distance matrix in desired format
@@ -168,29 +191,106 @@ def evaluate_mot(preds,gts):
                 # pred object center
                 px = (pred[j]["bbox"][0] + pred[j]['bbox'][2]) /2.0
                 py = (pred[j]["bbox"][1] + pred[j]['bbox'][3]) /2.0
-            
-                dist[i,j] = np.sqrt((px-gx)**2 + (py-gy)**2)
                 
+                d = np.sqrt((px-gx)**2 + (py-gy)**2)
+                dist[i,j] = d
+        
+        # if detection isn't close to any object (> threshold), remove
+        # this is a cludgey fix since the detrac dataset doesn't have all of the vehicles labeled
+        # get columnwise min
+        mins = np.min(dist,axis = 0)
+        idxs = np.where(mins < threshold)
+        
+        pred_ids = pred_ids[idxs]
+        dist = dist[:,idxs]
+        
         # update accumulator
         acc.update(gt_ids,pred_ids,dist)
         
         
     metric_module = motmetrics.metrics.create()
-    summary = metric_module.compute(acc,metrics = ["num_frames","mota","motp","precision","recall","num_switches","mostly_tracked","partially_tracked","mostly_lost","num_fragmentations"])
+    summary = metric_module.compute(acc,metrics = ["num_frames",
+                                                   "num_unique_objects",
+                                                   "mota",
+                                                   "motp",
+                                                   "precision",
+                                                   "recall",
+                                                   "num_switches",
+                                                   "mostly_tracked",
+                                                   "partially_tracked",
+                                                   "mostly_lost",
+                                                   "num_fragmentations",
+                                                   "num_false_positives",
+                                                   "num_misses",
+                                                   "num_switches"])
     
     return summary,acc
         
 
 if __name__ == "__main__":
+    biggest_array = np.zeros([9,18])
     
-    label_dir = "/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3"
-    gt_file = "/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3/MVI_20011_v3.xml"
-    pred_file = "/home/worklab/Documents/code/detection-by-tracking/preds_temp/MVI_20011_preds.cpkl"
-    # get gt labels
-    gts,metadata = parse_labels(gt_file)
+    for num in [63525,63552]:
+        all_step_metrics = {}
+        for det_step in [1,2,3,4,5,6,7,8,9,10,12,14,16,18,20,23,26,29]:
     
-    # get pred labels
-    with open(pred_file,"rb") as f:
-        preds = pickle.load(f)
+            label_dir = "/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3"
+            gt_file = "/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3/MVI_{}_v3.xml".format(num)
+            pred_file = "/home/worklab/Documents/code/detection-by-tracking/preds_temp/preds_MVI_{}_{}.cpkl".format(num,det_step)
+            # get gt labels
+            gts,metadata = parse_labels(gt_file)
+            ignored_regions = metadata['ignored_regions']
+            
+            # get pred labels
+            try:
+                with open(pred_file,"rb") as f:
+                    preds,frame_rate = pickle.load(f)
+            except:
+                with open(pred_file,"rb") as f:
+                    preds,frame_rate,time_met = pickle.load(f)
+                
+            metrics,acc = evaluate_mot(preds,gts,ignored_regions,threshold = 40)
+            metrics = metrics.to_dict()
+            metrics["framerate"] = frame_rate
+            all_step_metrics[det_step] = metrics
+            
         
-    metrics,acc = evaluate_mot(preds,gts)
+        
+        # aggregate and plot all 
+        n_objs = metrics["num_unique_objects"][0]
+        det_step = []
+        mota = []
+        motp = []
+        mostly_tracked = []
+        mostly_lost = []
+        num_fragmentations = []
+        num_switches = []
+        num_fp = []
+        num_fn = []
+        framerate = []
+        
+        for d in all_step_metrics:
+            det_step.append(d)
+            mota.append(all_step_metrics[d]["mota"][0])
+            motp.append(1.0 - ( all_step_metrics[d]["motp"][0]/ 1100))
+            mostly_tracked.append(all_step_metrics[d]["mostly_tracked"][0]/n_objs)
+            mostly_lost.append(all_step_metrics[d]["mostly_lost"][0]/n_objs)
+            num_fragmentations.append(all_step_metrics[d]["num_fragmentations"][0])
+            num_switches.append(all_step_metrics[d]["num_switches"][0])
+            num_fp.append(all_step_metrics[d]["num_misses"][0])
+            num_fn.append(all_step_metrics[d]["num_switches"][0])
+            framerate.append(all_step_metrics[d]["framerate"])
+        
+        metrics_np= np.array([mota,motp,mostly_tracked,mostly_lost,num_fragmentations,num_switches,num_fp,num_fn,framerate])
+        biggest_array+= metrics_np
+        if False:
+            plt.figure()
+            plt.plot(det_step,mota)
+            plt.plot(det_step,motp) #1100 = 1-(960**2 + 540**2 )**0.5, so normalize by image size
+            plt.plot(det_step,mostly_tracked)
+            plt.plot(det_step,mostly_lost)
+            plt.plot(det_step,framerate)
+            
+            plt.legend(["MOTA","MOTP","MT","ML","100 Hz"])
+        
+    biggest_array = biggest_array / 2.0

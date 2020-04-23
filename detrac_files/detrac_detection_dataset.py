@@ -287,7 +287,7 @@ class Track_Dataset(data.Dataset):
                 cv_im = plot_bboxes_2d(cv_im,label,metadata['ignored_regions'])
                 
             cv2.imshow("Frame",cv_im)
-            key = cv2.waitKey(1) & 0xff
+            key = cv2.waitKey(0) & 0xff
             #time.sleep(1/30.0)
             
             if key == ord('q'):
@@ -305,6 +305,8 @@ if __name__ == "__main__":
     #### Test script here
     label_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\DETRAC-Train-Annotations-XML-v3"
     image_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\Tracks"
+    label_dir = "/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3"
+    image_dir = "/home/worklab/Desktop/detrac/DETRAC-all-data"
     test = Track_Dataset(image_dir,label_dir)
     test.plot(0)
     temp = test[0]
