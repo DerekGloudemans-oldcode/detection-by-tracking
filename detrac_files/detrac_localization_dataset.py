@@ -78,13 +78,14 @@ class Localize_Dataset(data.Dataset):
         # parse and store all labels and image names in a list such that
         # all_data[i] returns dict with image name, label and other stats
         # track_offsets[i] retuns index of first frame of track[i[]]
-        for i in [0]: #range(len(track_list)):
+        for i in range(len(track_list)): #[0]: #
 
             images = [os.path.join(track_list[i],frame) for frame in os.listdir(track_list[i])]
             images.sort() 
             labels,metadata = label_list[track_list[i].split("/")[-1]]
             
             # each iteration of the loop gets one image
+            print (len(images),len(labels))
             for j in range(len(images)):
                 try:
                     image = images[j]
@@ -96,6 +97,10 @@ class Localize_Dataset(data.Dataset):
                         self.all_data.append((image,detection))
 
                 except:
+                    # this occurs because Detrac was dumbly labeled and they didn't include empty annotations for frames without objects
+                    # parse_labels corrects this mostly, except for trailing frames
+                    # so we just pass because there are no objects or labels anyway
+                    pass
                     print("Error: tried to load label {} for track {} but it doesnt exist. Labels is length {}".format(j,track_list[i],len(labels))) 
                 
                     
@@ -342,7 +347,14 @@ class Localize_Dataset(data.Dataset):
         
         # rest are bboxes
         all_boxes = []
+        frame_counter = 1
         for frame in frames:
+            while frame_counter < int(frame.attrib['num']):
+                # this means that there were some frames with no detections
+                all_boxes.append([])
+                frame_counter += 1
+            
+            frame_counter += 1
             frame_boxes = []
             #boxids = frame.getchildren()[0].getchildren()
             boxids = list(list(frame)[0])
