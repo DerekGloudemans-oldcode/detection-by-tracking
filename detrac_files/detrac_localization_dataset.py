@@ -78,7 +78,7 @@ class Localize_Dataset(data.Dataset):
         # parse and store all labels and image names in a list such that
         # all_data[i] returns dict with image name, label and other stats
         # track_offsets[i] retuns index of first frame of track[i[]]
-        for i in range(len(track_list)):
+        for i in [0]: #range(len(track_list)):
 
             images = [os.path.join(track_list[i],frame) for frame in os.listdir(track_list[i])]
             images.sort() 
@@ -124,19 +124,29 @@ class Localize_Dataset(data.Dataset):
         # copy so that original coordinates aren't overwritten
         bbox = label["bbox"].copy()
         
+        
+                
+        # flip sometimes
+        if np.random.rand() > 0.5:
+            im= F.hflip(im)
+            # reverse coords and also switch xmin and xmax
+            bbox[[2,0]] = im.size[0] - bbox[[0,2]]
+        
         # randomly shift the center of the crop
-        shift_scale = 200
+        shift_scale = 150
         x_shift = np.random.normal(0,im.size[0]/shift_scale)
         y_shift = np.random.normal(0,im.size[1]/shift_scale)
         #x_shift = 0
         #y_shift = 0
         
-        buffer  = min(bbox[2]-bbox[0],bbox[3]-bbox[1])/3# max(-5,np.random.normal(70,im.size[1]/shift_scale))
+        #buffer  = 0#min(bbox[2]-bbox[0],bbox[3]-bbox[1])/3# max(-5,np.random.normal(70,im.size[1]/shift_scale))
+        bufferx = np.random.normal(5,10)
+        buffery = bufferx*(np.random.rand()+0.5)
         # note may have indexed these wrongly
-        minx = max(0,bbox[0]-buffer)
-        miny = max(0,bbox[1]-buffer)
-        maxx = min(im.size[0],bbox[2]+buffer)
-        maxy = min(im.size[1],bbox[3]+buffer)
+        minx = max(0,bbox[0]-bufferx)
+        miny = max(0,bbox[1]-buffery)
+        maxx = min(im.size[0],bbox[2]+bufferx)
+        maxy = min(im.size[1],bbox[3]+buffery)
     
         minx = minx + x_shift
         maxx = maxx + x_shift
@@ -165,6 +175,8 @@ class Localize_Dataset(data.Dataset):
         y[4] = label["class_num"]
         
         im_crop,y = self.random_affine_crop(im_crop,y)
+
+        
         
         # convert image and label to tensors
         im_t = self.im_tf(im_crop)
@@ -185,10 +197,10 @@ class Localize_Dataset(data.Dataset):
     
         #define parameters for random transform
         scale2 = min(max_scaling,max(random.gauss(0.5,1),imsize/min(im.size))) +0.5 # verfify that scale will at least accomodate crop size
-        scale = random.random()*2 + 0.8
-        
+        scale = min(1.5, max(0.75,np.random.normal(1,0.25)))
+        #scale = 1
         shear = 0# (random.random()-0.5)*30 #angle
-        rotation = (random.random()-0.5) * 30 #angle
+        rotation = 0#(random.random()-0.5) * 30 #angle
         
         # transform matrix
         im = transforms.functional.affine(im,rotation,(0,0),scale,shear,fillcolor = (int(0.485*255),int(0.456*255),int(255*0.406)))
@@ -312,8 +324,8 @@ class Localize_Dataset(data.Dataset):
         seq_name = root.attrib['name']
         
         # get list of all frame elements
-        frames = root.getchildren()
-        
+        #frames = root.getchildren()
+        frames = list(root)
         # first child is sequence attributes
         seq_attrs = frames[0].attrib
         
@@ -332,9 +344,11 @@ class Localize_Dataset(data.Dataset):
         all_boxes = []
         for frame in frames:
             frame_boxes = []
-            boxids = frame.getchildren()[0].getchildren()
+            #boxids = frame.getchildren()[0].getchildren()
+            boxids = list(list(frame)[0])
             for boxid in boxids:
-                data = boxid.getchildren()
+                #data = boxid.getchildren()
+                data = list(boxid)
                 coords = data[0].attrib
                 stats = data[1].attrib
                 bbox = np.array([float(coords['left']),

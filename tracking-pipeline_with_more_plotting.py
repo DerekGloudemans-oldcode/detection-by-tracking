@@ -274,6 +274,57 @@ def plot(im,detections,post_locations,all_classes,class_dict,frame = None):
         im = cv2.resize(im, (1920,1080))
     cv2.imshow("window",im)
     time_metrics['plot'] += time.time() - start
+    cv2.waitKey(0)
+    
+    if frame is not None:
+        cv2.imwrite("output/{}.png".format(str(frame).zfill(4)),im*255)
+        
+        
+def plot_more(im,pre_locations,detections,post_locations,all_classes,class_dict,frame = None):
+    im = im.copy()/255.0
+    
+    for id in pre_locations:
+        bbox = pre_locations[id][:4]
+        color = (0.7,0.4,0.7) #colors[int(obj.cls)]
+        c1 =  (int(bbox[0]-bbox[2]/2),int(bbox[1]-bbox[3]*bbox[2]/2))
+        c2 =  (int(bbox[0]+bbox[2]/2),int(bbox[1]+bbox[3]*bbox[2]/2))
+        cv2.rectangle(im,c1,c2,color,2)
+    
+    for det in detections:
+        bbox = det[:4]
+        color = (0.4,0.7,0.7) #colors[int(obj.cls)]
+        c1 =  (int(bbox[0]-bbox[2]/2),int(bbox[1]-bbox[2]*bbox[3]/2))
+        c2 =  (int(bbox[0]+bbox[2]/2),int(bbox[1]+bbox[2]*bbox[3]/2))
+        cv2.rectangle(im,c1,c2,color,1)
+        
+    for id in post_locations:
+        # plot bbox
+        try:
+            most_common = np.argmax(all_classes[id])
+            cls = class_dict[most_common]
+        except:
+            cls = ""
+        label = "{} {}".format(cls,id)
+        bbox = post_locations[id][:4]
+        if sum(bbox) != 0:
+
+            color = (0.7,0.7,0.4) #colors[int(obj.cls)]
+            c1 =  (int(bbox[0]-bbox[2]/2),int(bbox[1]-bbox[3]*bbox[2]/2))
+            c2 =  (int(bbox[0]+bbox[2]/2),int(bbox[1]+bbox[3]*bbox[2]/2))
+            cv2.rectangle(im,c1,c2,color,1)
+            
+            # plot label
+            text_size = 0.8
+            t_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_PLAIN,text_size , 1)[0]
+            c2 = c1[0] + t_size[0] + 3, c1[1] + t_size[1] + 4
+            cv2.rectangle(im, c1, c2,color, -1)
+            cv2.putText(im, label, (c1[0], c1[1] + t_size[1] + 4), cv2.FONT_HERSHEY_PLAIN,text_size, [225,255,255], 1);
+    
+    
+    if im.shape[0] > 1920:
+        im = cv2.resize(im, (1920,1080))
+    cv2.imshow("window",im)
+    time_metrics['plot'] += time.time() - start
     cv2.waitKey(1)
     
     if frame is not None:
@@ -284,14 +335,14 @@ if __name__ == "__main__":
         main_dir = "/home/worklab/Desktop/detrac/DETRAC-test-data"
         track_directories = [os.path.join(main_dir,item) for item in os.listdir(main_dir)]
         track_directories.reverse()
-        #track_directories = ["/home/worklab/Desktop/detrac/DETRAC-test-data/MVI_63552"]
+        track_directories = ["/home/worklab/Desktop/detrac/DETRAC-test-data/MVI_63552"]
         #%% 1. Set up models, etc.
-        track_directories =   ["/home/worklab/Desktop/detrac/DETRAC-all-data/MVI_20011"]
+        #track_directories =   ["/home/worklab/Desktop/detrac/DETRAC-all-data/MVI_20011"]
         #track_directories =   ["/home/worklab/Desktop/detrac/DETRAC-all-data/MVI_20011"]
         #track_directory =   "/home/worklab/Desktop/detrac/DETRAC-all-data/MVI_63544"
         #track_directory =   "/home/worklab/Desktop/I-24 samples/cam_0"
         
-        det_steps = [25]
+        det_steps = [1]
         for det_step in det_steps:
         
             # Tracking parameters and settings
@@ -310,7 +361,7 @@ if __name__ == "__main__":
             except:
                 detector,localizer = load_models(device)
                 
-            tracker = Torch_KF("cpu",mod_err = 10, meas_err = 1, state_err = 1)
+            tracker = Torch_KF("cpu",mod_err = 1, meas_err = 1, state_err = 100)
     
              
             #%% 2. Loop Setup
@@ -395,7 +446,6 @@ if __name__ == "__main__":
                         # matchings[i] = [a,b] where a is index of pre_loc and b is index of detection
                         matchings = match_hungarian(pre_loc,detections[:,:4],iou_cutoff = 0.2)
                         time_metrics['match'] += time.time() - start
-                        
                         # try:
                         #     start = time.time()
                         #     matchings2 = match_greedy(pre_loc,detections[:,:4], threshold = 200)
@@ -561,8 +611,8 @@ if __name__ == "__main__":
                     # 10. Plot
                     start = time.time()
                     if PLOT:
-                        plot(original_im,detections,post_locations,all_classes,class_dict,frame = frame_num)
-        
+                        #plot(original_im,detections,post_locations,all_classes,class_dict,frame = frame_num)
+                        plot_more(original_im,pre_locations,detections,post_locations,all_classes,class_dict,frame = frame_num)
                         
                         
                     # increment frame counter 
