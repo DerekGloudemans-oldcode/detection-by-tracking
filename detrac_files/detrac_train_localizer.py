@@ -77,7 +77,23 @@ class ResNet_Localizer(nn.Module):
                   nn.Linear(start_num // 3,embed_out_num,bias = True),
                   nn.ReLU()
                   )
-
+        
+        for layer in self.classifier:
+            if type(layer) == torch.nn.modules.linear.Linear:
+                init_val = 0.05
+                nn.init.uniform_(layer.weight.data,-init_val,init_val)
+                nn.init.uniform_(layer.bias.data,-init_val,init_val)
+        for layer in self.regressor:
+            if type(layer) == torch.nn.modules.linear.Linear:
+                init_val = 0.05
+                nn.init.uniform_(layer.weight.data,-init_val,init_val)
+                nn.init.uniform_(layer.bias.data,-init_val,init_val)
+        for layer in self.embedder:
+            if type(layer) == torch.nn.modules.linear.Linear:
+                init_val = 0.05
+                nn.init.uniform_(layer.weight.data,-init_val,init_val)
+                nn.init.uniform_(layer.bias.data,-init_val,init_val)
+            
     def forward(self, x):
         """
         In the forward function we accept a Tensor of input data and we must return
@@ -147,29 +163,29 @@ def train_model(model, optimizer, scheduler,losses,
                         reg_targets = (targets[:,:4]+imsize*(wer-1)/2)/(imsize*wer)
                         
                         for loss_fn in losses['reg']:
-                            loss_comp = loss_fn(reg_out.float(),reg_targets.float())
-                            loss += loss_comp * 2
+                            loss_comp = loss_fn(reg_out.float(),reg_targets.float()) 
+                            loss_comp.backward(retain_graph = True)
                             each_loss.append(round(loss_comp.item()*100000)/100000.0)
                             
                         # apply each cls loss function
                         cls_targets = targets[:,4]
                         for loss_fn in losses['cls']:
-                            loss_comp = loss_fn(cls_out.float(),cls_targets.long())
-                            loss += loss_comp
+                            loss_comp = loss_fn(cls_out.float(),cls_targets.long()) /10.0
+                            loss_comp.backward()
                             each_loss.append(round(loss_comp.item()*100000)/100000.0)
                         acc = 0
                         
                         # backpropogate loss and adjust model weights
                         if phase == 'train':
-                            loss.backward()
+                            #loss.backward()
                             optimizer.step()
         
                     # verbose update
                     count += 1
                     total_acc += acc
-                    total_loss += loss.item()
+                    total_loss += sum(each_loss) #loss.item()
                     if count % 100 == 0:
-                        print("{} epoch {} batch {} -- Loss so far: {:03f} -- {}, {}, {}".format(phase,epoch,count,total_loss/count,each_loss[0],each_loss[1],each_loss[2]))
+                        print("{} epoch {} batch {} -- Loss so far: {:03f} -- {}".format(phase,epoch,count,total_loss/count,[item for item in each_loss]))
                     if count % 1000 == 0:
                         plot_batch(model,next(iter(dataloaders['train'])),class_dict)
                     
@@ -178,7 +194,7 @@ def train_model(model, optimizer, scheduler,losses,
                         avg_loss = total_loss/count
                         if avg_loss < best_loss:
                             # save a checkpoint
-                            PATH = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain/resnet18_epoch{}_batch{}.pt".format(epoch,count)
+                            PATH = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain2/resnet18_epoch{}_batch{}.pt".format(epoch,count)
                             torch.save({
                                 'epoch': epoch,
                                 'model_state_dict': model.state_dict(),
@@ -198,7 +214,7 @@ def train_model(model, optimizer, scheduler,losses,
 
                 if avg_loss < best_loss:
                     # save a checkpoint
-                    PATH = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain/resnet18_epoch{}_end.pt".format(epoch)
+                    PATH = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain2/resnet18_epoch{}_end.pt".format(epoch)
                     torch.save({
                         'epoch': epoch,
                         'model_state_dict': model.state_dict(),
@@ -391,10 +407,10 @@ class_dict = {
 #------------------------------ Main code here -------------------------------#
 if __name__ == "__main__":
     
-    checkpoint_file = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain/resnet18_epoch8_end.pt"
-    #checkpoint_file = None
+    #checkpoint_file = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain2/SAVE_resnet18_epoch2_end.pt"
+    checkpoint_file = None
 
-    patience = 3
+    patience = 4
 
     label_dir       = "/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3"
     train_image_dir = "/home/worklab/Desktop/detrac/DETRAC-train-data"
@@ -452,7 +468,7 @@ if __name__ == "__main__":
     optimizer = optim.SGD(model.parameters(), lr=0.1,momentum = 0.1)
     
     # 6. decay LR by a factor of 0.1 every 7 epochs
-    exp_lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.3)
+    exp_lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.3)
     
     # 7. define start epoch for consistent labeling if checkpoint is reloaded
     start_epoch = -1
@@ -460,16 +476,17 @@ if __name__ == "__main__":
 
     # 8. if checkpoint specified, load model and optimizer weights from checkpoint
     if checkpoint_file != None:
-        model,optimizer,start_epoch,all_metrics = load_model(checkpoint_file, model, optimizer)
+        model,_,start_epoch,all_metrics = load_model(checkpoint_file, model, optimizer)
         #model,_,start_epoch = load_model(checkpoint_file, model, optimizer) # optimizer restarts from scratch
         print("Checkpoint loaded.")
      
     # 9. define losses
     losses = {"cls": [nn.CrossEntropyLoss()],
-              "reg": [Box_Loss(),nn.MSELoss()]
+              "reg": [nn.MSELoss(), Box_Loss(),]
               }
     
-    if False:    
+    
+    if True:    
     # train model
         print("Beginning training.")
         model,all_metrics = train_model(model,
@@ -487,5 +504,5 @@ if __name__ == "__main__":
     plot_batch(model,batch,class_dict)
         
     
-
+    
    

@@ -145,8 +145,8 @@ class Localize_Dataset(data.Dataset):
         #y_shift = 0
         
         #buffer  = 0#min(bbox[2]-bbox[0],bbox[3]-bbox[1])/3# max(-5,np.random.normal(70,im.size[1]/shift_scale))
-        bufferx = np.random.normal(5,10)
-        buffery = bufferx*(np.random.rand()+0.5)
+        bufferx = max(0,np.random.normal(5,10))
+        buffery = max(0,bufferx*(np.random.rand()+0.5))
         # note may have indexed these wrongly
         minx = max(0,bbox[0]-bufferx)
         miny = max(0,bbox[1]-buffery)
@@ -161,6 +161,10 @@ class Localize_Dataset(data.Dataset):
         im_crop = F.crop(im,miny,minx,maxy-miny,maxx-minx)
         del im 
         
+        if im_crop.size[0] == 0 or im_crop.size[1] == 0:
+            print("Oh no!")
+            raise Exception
+            
         bbox[0] = bbox[0] - minx
         bbox[1] = bbox[1] - miny
         bbox[2] = bbox[2] - minx
