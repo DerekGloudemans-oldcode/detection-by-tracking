@@ -177,7 +177,7 @@ def test_outputs(bboxes,crops):
 def load_models(device):
     yolo_checkpoint =   "/home/worklab/Desktop/checkpoints/yolo/yolov3.weights"
     resnet_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer/CPU_resnet18_epoch4.pt"
-    resnet_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain/cpu_resnet18_epoch8_close.pt"
+    resnet_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain2/cpu_resnet18_epoch14.pt"
 
     detector = Darknet_Detector(
                 'pytorch_yolo_v3/cfg/yolov3.cfg',
@@ -537,7 +537,7 @@ if __name__ == "__main__":
                         
                         #lastly, replace scale and ratio with original values 
                         ## NOTE this is kind of a cludgey fix and ideally localizer should be better
-                        output[:,2:4] = boxes[:,2:4] 
+                        #output[:,2:4] = boxes[:,2:4] 
                         time_metrics['post_localize'] += time.time() - start
             
                         # 6b. Update tracker

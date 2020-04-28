@@ -22,98 +22,107 @@ import _pickle as pickle
 import matplotlib.pyplot as plt
 
 def parse_labels(label_file):
-        """
-        Returns a set of metadata (1 per track) and a list of labels (1 item per
-        frame, where an item is a list of dictionaries (one dictionary per object
-        with fields id, class, truncation, orientation, and bbox
-        """
-        
-        class_dict = {
-            'Sedan':0,
-            'Hatchback':1,
-            'Suv':2,
-            'Van':3,
-            'Police':4,
-            'Taxi':5,
-            'Bus':6,
-            'Truck-Box-Large':7,
-            'MiniVan':8,
-            'Truck-Box-Med':9,
-            'Truck-Util':10,
-            'Truck-Pickup':11,
-            'Truck-Flatbed':12,
-            
-            0:'Sedan',
-            1:'Hatchback',
-            2:'Suv',
-            3:'Van',
-            4:'Police',
-            5:'Taxi',
-            6:'Bus',
-            7:'Truck-Box-Large',
-            8:'MiniVan',
-            9:'Truck-Box-Med',
-            10:'Truck-Util',
-            11:'Truck-Pickup',
-            12:'Truck-Flatbed'
-            }
-        
-        
-        tree = ET.parse(label_file)
-        root = tree.getroot()
-        
-        # get sequence attributes
-        seq_name = root.attrib['name']
-        
-        # get list of all frame elements
-        frames = root.getchildren()
-        
-        # first child is sequence attributes
-        seq_attrs = frames[0].attrib
-        
-        # second child is ignored regions
-        ignored_regions = []
-        for region in frames[1]:
-            coords = region.attrib
-            box = np.array([float(coords['left']),
-                            float(coords['top']),
-                            float(coords['left']) + float(coords['width']),
-                            float(coords['top'])  + float(coords['height'])])
-            ignored_regions.append(box)
-        frames = frames[2:]
-        
-        # rest are bboxes
-        all_boxes = []
-        for frame in frames:
-            frame_boxes = []
-            boxids = frame.getchildren()[0].getchildren()
-            for boxid in boxids:
-                data = boxid.getchildren()
-                coords = data[0].attrib
-                stats = data[1].attrib
-                bbox = np.array([float(coords['left']),
-                                float(coords['top']),
-                                float(coords['left']) + float(coords['width']),
-                                float(coords['top'])  + float(coords['height'])])
-                det_dict = {
-                        'id':int(boxid.attrib['id']),
-                        'class':stats['vehicle_type'],
-                        'class_num':class_dict[stats['vehicle_type']],
-                        'color':stats['color'],
-                        'orientation':float(stats['orientation']),
-                        'truncation':float(stats['truncation_ratio']),
-                        'bbox':bbox
-                        }
-                
-                frame_boxes.append(det_dict)
-            all_boxes.append(frame_boxes)
-        
-        sequence_metadata = {
-                'sequence':seq_name,
-                'seq_attributes':seq_attrs,
-                'ignored_regions':ignored_regions
-                }
-        return all_boxes, sequence_metadata
+     """
+     Returns a set of metadata (1 per track) and a list of labels (1 item per
+     frame, where an item is a list of dictionaries (one dictionary per object
+     with fields id, class, truncation, orientation, and bbox
+     """
+     
+     class_dict = {
+         'Sedan':0,
+         'Hatchback':1,
+         'Suv':2,
+         'Van':3,
+         'Police':4,
+         'Taxi':5,
+         'Bus':6,
+         'Truck-Box-Large':7,
+         'MiniVan':8,
+         'Truck-Box-Med':9,
+         'Truck-Util':10,
+         'Truck-Pickup':11,
+         'Truck-Flatbed':12,
+         
+         0:'Sedan',
+         1:'Hatchback',
+         2:'Suv',
+         3:'Van',
+         4:'Police',
+         5:'Taxi',
+         6:'Bus',
+         7:'Truck-Box-Large',
+         8:'MiniVan',
+         9:'Truck-Box-Med',
+         10:'Truck-Util',
+         11:'Truck-Pickup',
+         12:'Truck-Flatbed'
+         }
+     
+     
+     tree = ET.parse(label_file)
+     root = tree.getroot()
+     
+     # get sequence attributes
+     seq_name = root.attrib['name']
+     
+     # get list of all frame elements
+     #frames = root.getchildren()
+     frames = list(root)
+     # first child is sequence attributes
+     seq_attrs = frames[0].attrib
+     
+     # second child is ignored regions
+     ignored_regions = []
+     for region in frames[1]:
+         coords = region.attrib
+         box = np.array([float(coords['left']),
+                         float(coords['top']),
+                         float(coords['left']) + float(coords['width']),
+                         float(coords['top'])  + float(coords['height'])])
+         ignored_regions.append(box)
+     frames = frames[2:]
+     
+     # rest are bboxes
+     all_boxes = []
+     frame_counter = 1
+     for frame in frames:
+         while frame_counter < int(frame.attrib['num']):
+             # this means that there were some frames with no detections
+             all_boxes.append([])
+             frame_counter += 1
+         
+         frame_counter += 1
+         frame_boxes = []
+         #boxids = frame.getchildren()[0].getchildren()
+         boxids = list(list(frame)[0])
+         for boxid in boxids:
+             #data = boxid.getchildren()
+             data = list(boxid)
+             coords = data[0].attrib
+             stats = data[1].attrib
+             bbox = np.array([float(coords['left']),
+                             float(coords['top']),
+                             float(coords['left']) + float(coords['width']),
+                             float(coords['top'])  + float(coords['height'])])
+             det_dict = {
+                     'id':int(boxid.attrib['id']),
+                     'class':stats['vehicle_type'],
+                     'class_num':class_dict[stats['vehicle_type']],
+                     'color':stats['color'],
+                     'orientation':float(stats['orientation']),
+                     'truncation':float(stats['truncation_ratio']),
+                     'bbox':bbox
+                     }
+             
+             frame_boxes.append(det_dict)
+         all_boxes.append(frame_boxes)
+     
+     sequence_metadata = {
+             'sequence':seq_name,
+             'seq_attributes':seq_attrs,
+             'ignored_regions':ignored_regions
+             }
+     return all_boxes, sequence_metadata
 
 def test_regions(regions,x,y):
     """
@@ -171,7 +180,7 @@ def evaluate_mot(preds,gts,ignored_regions = [],threshold = 100):
         pred_ids = [] # object ids for each object in this frame
         for obj in pred:
             
-             # pred object center
+            # pred object center
             # px = (obj["bbox"][0] + obj['bbox'][2]) /2.0
             # py = (obj["bbox"][1] + obj['bbox'][3]) /2.0
             # exclude = test_regions(ignored_regions,px,py)
@@ -198,11 +207,12 @@ def evaluate_mot(preds,gts,ignored_regions = [],threshold = 100):
         # if detection isn't close to any object (> threshold), remove
         # this is a cludgey fix since the detrac dataset doesn't have all of the vehicles labeled
         # get columnwise min
-        mins = np.min(dist,axis = 0)
-        idxs = np.where(mins < threshold)
-        
-        pred_ids = pred_ids[idxs]
-        dist = dist[:,idxs]
+        if False:
+            mins = np.min(dist,axis = 0)
+            idxs = np.where(mins < threshold)
+            
+            pred_ids = pred_ids[idxs]
+            dist = dist[:,idxs]
         
         # update accumulator
         acc.update(gt_ids,pred_ids,dist)

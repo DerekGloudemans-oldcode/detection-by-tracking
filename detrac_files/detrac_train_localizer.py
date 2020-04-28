@@ -162,24 +162,30 @@ def train_model(model, optimizer, scheduler,losses,
                         wer = 3
                         reg_targets = (targets[:,:4]+imsize*(wer-1)/2)/(imsize*wer)
                         
-                        for loss_fn in losses['reg']:
-                            loss_comp = loss_fn(reg_out.float(),reg_targets.float()) 
-                            loss_comp.backward(retain_graph = True)
-                            each_loss.append(round(loss_comp.item()*100000)/100000.0)
+                        try:
+                            for loss_fn in losses['reg']:
+                                loss_comp = loss_fn(reg_out.float(),reg_targets.float()) 
+                                if phase == 'train':
+                                    loss_comp.backward(retain_graph = True)
+                                each_loss.append(round(loss_comp.item()*100000)/100000.0)
+                                
+                            # apply each cls loss function
+                            cls_targets = targets[:,4]
+                            for loss_fn in losses['cls']:
+                                loss_comp = loss_fn(cls_out.float(),cls_targets.long()) /10.0
+                                if phase == 'train':
+                                    loss_comp.backward()
+                                each_loss.append(round(loss_comp.item()*100000)/100000.0)
+                            acc = 0
                             
-                        # apply each cls loss function
-                        cls_targets = targets[:,4]
-                        for loss_fn in losses['cls']:
-                            loss_comp = loss_fn(cls_out.float(),cls_targets.long()) /10.0
-                            loss_comp.backward()
-                            each_loss.append(round(loss_comp.item()*100000)/100000.0)
-                        acc = 0
-                        
-                        # backpropogate loss and adjust model weights
-                        if phase == 'train':
-                            #loss.backward()
-                            optimizer.step()
-        
+                            # backpropogate loss and adjust model weights
+                            if phase == 'train':
+                                #loss.backward()
+                                optimizer.step()
+            
+                        except RuntimeError:
+                            print("Some sort of autograd error")
+                            
                     # verbose update
                     count += 1
                     total_acc += acc
@@ -407,8 +413,10 @@ class_dict = {
 #------------------------------ Main code here -------------------------------#
 if __name__ == "__main__":
     
-    #checkpoint_file = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain2/SAVE_resnet18_epoch2_end.pt"
-    checkpoint_file = None
+    #checkpoint_file = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain2/try_this_one.pt"
+    checkpoint_file = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain2/resnet18_epoch14_end.pt"
+
+    #checkpoint_file = None
 
     patience = 4
 
@@ -486,7 +494,7 @@ if __name__ == "__main__":
               }
     
     
-    if True:    
+    if False:    
     # train model
         print("Beginning training.")
         model,all_metrics = train_model(model,
