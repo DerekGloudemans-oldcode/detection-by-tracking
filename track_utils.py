@@ -195,7 +195,7 @@ def load_models(device):
     print("Detector and Localizer on {}.".format(device))
     return detector,localizer
     
-def load_all_frames(track_directory,det_step,cutoff = None): 
+def load_all_frames(track_directory,det_step,init_frames,cutoff = None): 
     print("Loading frames into memory.")
     files = []
     frames = []
@@ -207,7 +207,7 @@ def load_all_frames(track_directory,det_step,cutoff = None):
     for num, f in enumerate(files):
          with Image.open(f) as im:
              
-             if num % det_step == 0:   
+             if num % det_step < init_frames:   
                  # convert to CV2 style image
                  open_cv_image = np.array(im) 
                  im = open_cv_image.copy() 
@@ -280,6 +280,7 @@ def plot(im,detections,post_locations,all_classes,class_dict,frame = None):
 
 def skip_track(track_path, tracker, det_step = 1, PLOT = True):
         
+    init_frames = 3
     
     fsld_max = det_step
     
@@ -298,7 +299,7 @@ def skip_track(track_path, tracker, det_step = 1, PLOT = True):
     
              
     # Loop Setup
-    frames,n_frames = load_all_frames(track_path,det_step,cutoff = None)
+    frames,n_frames = load_all_frames(track_path,det_step,init_frames,cutoff = None)
     
     frame_num = 0               # iteration counter   
     next_obj_id = 0             # next id for a new object (incremented during tracking)
@@ -332,7 +333,7 @@ def skip_track(track_path, tracker, det_step = 1, PLOT = True):
         # 1. Move image to GPU
         start = time.time()
         frame = frame.to(device,non_blocking = True)
-        if frame_num % det_step == 0:
+        if frame_num % det_step < init_frames: #if frame_num % det_step == 0:
             dim = dim.to(device,non_blocking = True)                      
         time_metrics['gpu_load'] += time.time() - start
         
@@ -348,7 +349,7 @@ def skip_track(track_path, tracker, det_step = 1, PLOT = True):
         time_metrics['predict'] += time.time() - start
     
        
-        if frame_num % det_step == 0: #Use YOLO
+        if frame_num % det_step < init_frames: #Use YOLO
             # 3a. YOLO detect                            
             detections = detector.detect2(frame,dim)
             torch.cuda.synchronize(device)
@@ -519,7 +520,7 @@ def skip_track(track_path, tracker, det_step = 1, PLOT = True):
             
             #lastly, replace scale and ratio with original values 
             ## NOTE this is kind of a cludgey fix and ideally localizer should be better
-            #output[:,2:4] = boxes[:,2:4] 
+            output[:,2:4] = boxes[:,2:4] 
             time_metrics['post_localize'] += time.time() - start
 
             # 6b. Update tracker

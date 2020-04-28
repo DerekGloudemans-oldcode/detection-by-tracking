@@ -180,12 +180,12 @@ def evaluate_mot(preds,gts,ignored_regions = [],threshold = 100):
         pred_ids = [] # object ids for each object in this frame
         for obj in pred:
             
-            # pred object center
-            # px = (obj["bbox"][0] + obj['bbox'][2]) /2.0
-            # py = (obj["bbox"][1] + obj['bbox'][3]) /2.0
-            # exclude = test_regions(ignored_regions,px,py)
+            #pred object center
+            px = (obj["bbox"][0] + obj['bbox'][2]) /2.0
+            py = (obj["bbox"][1] + obj['bbox'][3]) /2.0
+            exclude = test_regions(ignored_regions,px,py)
             
-            # if not exclude:
+            if not exclude:
                 pred_ids.append(obj["id"])
         pred_ids = np.array(pred_ids)
         
