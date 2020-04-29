@@ -60,10 +60,19 @@ class Track_Dataset(data.Dataset):
                 for item in frame:
                     id = item['id']
                     bbox = item['bbox']
+                    # shift to xysr
+                    new_bbox = np.zeros(4)
+                    new_bbox[0] = (bbox[2] + bbox[0])/2.0
+                    new_bbox[1] = (bbox[3] + bbox[1])/2.0
+                    new_bbox[2] = (bbox[2] - bbox[0])
+                    new_bbox[3] = (bbox[3] - bbox[1])/new_bbox[2]
+                    
+                    
+                    
                     if id in objects.keys():
-                        objects[id].append(bbox)
+                        objects[id].append(new_bbox)
                     else:
-                        objects[id] = [bbox]
+                        objects[id] = [new_bbox]
                         
             # get rid of object ids and just keep list of bboxes
             for id in objects:
