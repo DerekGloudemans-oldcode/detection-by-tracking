@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import time
 
 class Torch_KF(object):
-    def __init__(self,device,state_err = 1, meas_err = 1, mod_err = 1):
+    def __init__(self,device,state_err = 1, meas_err = 1, mod_err = 1, INIT = None):
         # initialize tensors
         meas_size = 4
         state_size = 7
@@ -41,21 +41,22 @@ class Torch_KF(object):
         }
         """
         
-        # set intial value for state covariance
-        self.P0 = torch.eye(state_size).unsqueeze(0) * state_err
-        
-        # these values won't change 
-        self.F = torch.eye(state_size).float()
-        self.F[[0,1,2],[4,5,6]] = self.t
-        self.H[:4,:4] = torch.eye(4)
-        self.Q = torch.eye(state_size).unsqueeze(0) * mod_err                     #+ 1
-        self.R = torch.eye(meas_size).unsqueeze(0) * meas_err
-        
-        self.F = self.F.to(device)
-        self.H = self.H.to(device)
-        self.Q = self.Q.to(device)
-        self.R = self.R.to(device)
-        self.P0 = self.P0.to(device)
+        if INIT is not None:
+            # set intial value for state covariance
+            self.P0 = torch.eye(state_size).unsqueeze(0) * state_err
+            
+            # these values won't change 
+            self.F = torch.eye(state_size).float()
+            self.F[[0,1,2],[4,5,6]] = self.t
+            self.H[:4,:4] = torch.eye(4)
+            self.Q = torch.eye(state_size).unsqueeze(0) * mod_err                     #+ 1
+            self.R = torch.eye(meas_size).unsqueeze(0) * meas_err
+            
+            self.F = self.F.to(device)
+            self.H = self.H.to(device)
+            self.Q = self.Q.to(device)
+            self.R = self.R.to(device)
+            self.P0 = self.P0.to(device)
 
         
         

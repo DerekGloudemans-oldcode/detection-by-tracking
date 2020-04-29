@@ -46,7 +46,11 @@ class Track_Dataset(data.Dataset):
         # parse labels and store in dict keyed by track name
         label_list = []
         for item in os.listdir(label_dir):
-            name = item.split("_v3.xml")[0]
+            name = item.split("_v3.xml")[0].split("MVI_")[-1]
+            if int(name) in  [20012,20034,63525,63544,63552,63553,63554,63561,63562,63563]:
+                print("Removed Validation tracks, gotta maintain data separation!")
+                continue
+
             detections = self.parse_labels(os.path.join(label_dir,item))[0]
             
             objects = {}
@@ -85,8 +89,8 @@ class Track_Dataset(data.Dataset):
         data = self.label_list[index]
         
         # if track is too short, just use the next index instead
-        while len(data) < n:
-            index += 1
+        while len(data) <= n:
+            index = (index + 1) % len(self.label_list)
             data = self.label_list[index]
         
         start = np.random.randint(0,len(data)-n)
