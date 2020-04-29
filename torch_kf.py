@@ -41,7 +41,7 @@ class Torch_KF(object):
         }
         """
         
-        if INIT is not None:
+        if INIT is None:
             # set intial value for state covariance
             self.P0 = torch.eye(state_size).unsqueeze(0) * state_err
             
@@ -57,6 +57,13 @@ class Torch_KF(object):
             self.Q = self.Q.to(device)
             self.R = self.R.to(device)
             self.P0 = self.P0.to(device)
+            
+        else:
+            self.P0 = INIT["P"].unsqueeze(0)
+            self.F  = INIT["F"]
+            self.H  = INIT["H"]
+            self.Q  = INIT["Q"].unsqueeze(0)
+            self.R  = INIT["R"].unsqueeze(0)
 
         
         
@@ -68,7 +75,11 @@ class Torch_KF(object):
         """
         
         newX = torch.zeros((len(detections),self.state_size)) 
-        newX[:,:4] = torch.from_numpy(detections).to(self.device)
+        try:
+            newX[:,:4] = torch.from_numpy(detections).to(self.device)
+        except:
+            newX[:,:4] = detections.to(self.device)
+            
         newP = self.P0.repeat(len(obj_ids),1,1)
 
         # store state and initialize P with defaults
@@ -138,7 +149,10 @@ class Torch_KF(object):
         P_up = self.P[relevant,:,:]
         
         # state innovation --> y = z - XHt --> mx4 = mx4 - [mx7] x [4x7]t  
-        z = torch.from_numpy(detections).to(self.device)
+        try:
+            z = torch.from_numpy(detections).to(self.device)
+        except:
+             z = detections.to(self.device)
         y = z - torch.mm(X_up, self.H.transpose(0,1))
         
         # covariance innovation --> HPHt + R --> [mx4x4] = [mx4x7] bx [mx7x7] bx [mx4x7]t + [mx4x4]

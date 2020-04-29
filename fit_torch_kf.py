@@ -7,7 +7,7 @@ Created on Wed Apr 29 11:20:41 2020
 """
 
 import torch
-import numpy
+import numpy as np
 import time
 import random
 random.seed  = 0
@@ -51,26 +51,92 @@ def iou(a,b):
     
     intersection = torch.max(zeros, maxx-minx) * torch.max(zeros,maxy-miny)
     union = area_a + area_b - intersection
-    mean_iou = (torch.mean(intersection) + 1e-06) / (torch.mean(union) + 1e-06)
+    iou = torch.div(intersection,union)
+    mean_iou = torch.mean(iou)
     
     return mean_iou
 
-# define parameters
-lr        = 0.01  # learning rate
-e         = 1e-06 # gradient estimation step size
-b         = 2000 # batch size
-n_pre     = 3     # number of frames used to initially tune tracker
-n_post    = 5     # number of frame rollouts used to evaluate tracker
-tune_kf   = ['P','Q','R','H'] # which KF parameters to optimize over
 
- 
+def score_tracker(tracker,batch,n_pre,n_post):
+    """
+    Evaluates a tracker by inially updating it with n_pre frames of object locations,
+    then rolls out predictions for n_post frames and evaluates iou with ground
+    truths for these frames. Returns average iou for all objects and rollout frames
+
+    Parameters
+    ----------
+    tracker : Torch_KF object
+        a Kalman Filter tracker
+    batch : Float Tensor - [batch_size,(n_pre + n_post),4] 
+        bounding boxes for several objects for several frames
+    n_pre : int
+        number of frames used to initially update the tracker
+    n_post : int
+        number of frames used to evaluate the tracker
+
+    Returns
+    -------
+    score : average bbox iou for all objects evaluated over n_post rollout predictions
+    """
+    obj_ids = [i for i in range(len(batch))]
+    
+    tracker.add(batch[:,0,:],obj_ids)
+    
+    for frame in range(1,n_pre):
+        tracker.predict()
+        tracker.update(batch[:,frame,:],obj_ids)
+    
+    running_mean_iou = 0
+    for frame in range(n_pre,n_pre+n_post):
+        # roll out a frame
+        tracker.predict()
+        
+        # get predicted object locations
+        objs = tracker.objs()
+        objs = [objs[key] for key in objs]
+        pred = torch.from_numpy(np.array(objs)).double()
+        
+        
+        # evaluate
+        val = iou(batch[:,frame,:],pred)
+        running_mean_iou += val.item()
+    
+    score = running_mean_iou / n_post
+    
+    return score
+
+
+##############################################################################
+    ##############################################################################
+##############################################################################
+    ##############################################################################
+##############################################################################
+    ##############################################################################
+##############################################################################
+    ##############################################################################
+##############################################################################
+    ##############################################################################
+
+
+
+
+# define parameters
+lr        = 0.03  # learning rate
+e         = 1e-06 # gradient estimation step size
+b         = 3000 # batch size
+n_pre     = 3     # number of frames used to initially tune tracker
+n_post    = 7     # number of frame rollouts used to evaluate tracker
+tune      = ['Q'] # which KF parameters to optimize over
+
+
+    
 
 
 try:
     loader
 except:
     # initialize dataset
-    dataset = Track_Dataset("/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3")
+    dataset = Track_Dataset("/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3", n = (n_pre + n_post))
     
     # 3. create training params
     params = {'batch_size' : b,
@@ -84,30 +150,92 @@ except:
 
 
 # create initial values for each matrix
-P = torch.zeros((7,7))
-Q = torch.zeros((7,7))
-R = torch.zeros((4,4))
-F = torch.zeros((7,7))
-H = torch.zeros((4,7))
+tracker = Torch_KF("cpu",INIT = None)
 kf_params = {
-        "P":P,
-        "Q":Q,
-        "R":R,
-        "F":F,
-        "H":H
+        "P":tracker.P0.squeeze(0),
+        "Q":tracker.Q.squeeze(0),
+        "R":tracker.R.squeeze(0),
+        "F":tracker.F,
+        "H":tracker.H
         }
 
-delete_keys = []
-for key in kf_params:
-    if key not in tune_kf:
-        delete_keys.append(key)
-delete_keys.reverse()
-for key in delete_keys:
-    del kf_params[key]
     
-    
-temp = next(iter(loader))
-a1 = temp[:,0,:]
-a2 = temp[:,1,:]
-print(iou(a1,a2).item())
+if False:    
+    temp = next(iter(loader))
+    a1 = temp[:,0,:]
+    a2 = temp[:,1,:]
+    print(iou(a1,a2).item())
 
+
+for iteration in range(10000):
+    start = time.time()
+    
+    # grab batch
+    batch = next(iter(loader))
+    
+    # initialize tracker
+    #tracker = Torch_KF("cpu",INIT = kf_params)
+    tracker = Torch_KF("cpu",INIT = kf_params)
+
+    # score tracker on batch
+    baseline = score_tracker(tracker,batch,n_pre = n_pre,n_post = n_post)
+    del tracker
+    
+    if iteration % 10 == 0:
+        print("Iteration: {} ---> score {:.3f} --->".format(iteration, baseline),end =" ")
+    # calculate gradients
+    
+    if 'P' in tune:         # note must be diagonal symmetrical
+        pass
+    
+    if 'Q' in tune:         # note must be diagonal symmetrical
+        Q = kf_params['Q'].clone()
+        Q_grad = torch.zeros(Q.shape)
+        
+        for i in range(Q.shape[0]):
+            for j in range(i,Q.shape[1]):
+                # tweak Q
+                Q[i,j] = Q[i,j] + e
+                Q[j,i] = Q[j,i] + e
+                
+                new_params = kf_params.copy()
+                new_params['Q'] = Q
+                    
+                tracker = Torch_KF("cpu",INIT = new_params)
+                new_score = score_tracker(tracker,batch,n_pre = n_pre, n_post = n_post)
+                
+                grad = (new_score - baseline)/e
+                Q_grad[i,j] = grad
+                Q_grad[j,i] = grad
+        
+    if 'F' in tune:
+        F = kf_params['F'].clone()
+        F_grad = torch.zeros(F.shape)
+        
+        for i in range(F.shape[0]):
+            for j in range(0,F.shape[1]):
+                # tweak Q
+                F[i,j] = F[i,j] + e
+                
+                new_params = kf_params.copy()
+                new_params['F'] = F
+                    
+                tracker = Torch_KF("cpu",INIT = new_params)
+                new_score = score_tracker(tracker,batch,n_pre = n_pre, n_post = n_post)
+                
+                grad = (new_score - baseline)/e
+                F_grad[i,j] = grad
+
+    if 'R' in tune:         # note must be diagonal symmetrical\
+        pass
+    
+    # adjust each matrix based on gradients
+    if 'Q' in tune:
+        kf_params['Q'] += lr * Q_grad
+    if 'F' in tune:
+        kf_params['F'] += lr * Q_grad
+    
+    if iteration % 10 == 0:
+        print("Took {} sec".format(time.time() -start))    
+
+    

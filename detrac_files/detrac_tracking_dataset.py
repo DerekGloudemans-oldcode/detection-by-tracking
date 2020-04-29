@@ -36,19 +36,19 @@ class Track_Dataset(data.Dataset):
     need to partition data manually by separate directories
     """
     
-    def __init__(self, label_dir):
+    def __init__(self, label_dir,n = 8):
         """ initializes object
         image dir - (string) - a directory containing a subdirectory for each track sequence
         label dir - (string) - a directory containing a label file per sequence
         """
-
+        self.n = n
         
         # parse labels and store in dict keyed by track name
         label_list = []
         for item in os.listdir(label_dir):
             name = item.split("_v3.xml")[0].split("MVI_")[-1]
             if int(name) in  [20012,20034,63525,63544,63552,63553,63554,63561,63562,63563]:
-                print("Removed Validation tracks, gotta maintain data separation!")
+                #print("Removed Validation tracks, gotta maintain data separation!")
                 continue
 
             detections = self.parse_labels(os.path.join(label_dir,item))[0]
@@ -93,17 +93,17 @@ class Track_Dataset(data.Dataset):
         """ returns total number of frames in all tracks"""
         return len (self.label_list)
 
-    def __getitem__(self, index, n = 8):
+    def __getitem__(self, index):
         
         data = self.label_list[index]
         
         # if track is too short, just use the next index instead
-        while len(data) <= n:
+        while len(data) <= self.n:
             index = (index + 1) % len(self.label_list)
             data = self.label_list[index]
         
-        start = np.random.randint(0,len(data)-n)
-        return data[start:start+n,:]
+        start = np.random.randint(0,len(data)-self.n)
+        return data[start:start+self.n,:]
         
         
     def parse_labels(self,label_file):
