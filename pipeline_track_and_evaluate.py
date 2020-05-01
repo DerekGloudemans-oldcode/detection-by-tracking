@@ -26,7 +26,8 @@ if __name__ == "__main__":
     det_step = 7
     tracks = [40243,20011,20012,63562,63563]
     tracks = [20012,20034,63525,63544,63552,63553,63554,63561,63562,63563]
-    SHOW = False
+    tracks = [63563]
+    SHOW = True
     
     # get list of all files in directory and corresponding path to track and labels
     track_dir = "/home/worklab/Desktop/detrac/DETRAC-all-data"
@@ -47,7 +48,10 @@ if __name__ == "__main__":
     # for each track and for specified det_step, track and evaluate
     for id in tracks:
         # track
-        tracker = Torch_KF("cpu",mod_err = 1, meas_err = 1, state_err = 1)
+        with open("velocity_fitted_Q.cpkl", 'rb') as f:
+            kf_params = pickle.load(f)
+        
+        tracker = Torch_KF("cpu",mod_err = 1, meas_err = 1, state_err = 0, INIT = kf_params)
         frames = track_dict[id]["frames"]
         preds, Hz, time_metrics = track_utils.skip_track(frames,tracker,det_step = det_step,PLOT = SHOW)
   

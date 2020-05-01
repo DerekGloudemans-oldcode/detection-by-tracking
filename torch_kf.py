@@ -14,19 +14,18 @@ import time
 class Torch_KF(object):
     def __init__(self,device,state_err = 1, meas_err = 1, mod_err = 1, INIT = None):
         # initialize tensors
-        meas_size = 4
-        state_size = 7
-        self.state_size = state_size
+        self.meas_size = 4
+        self.state_size = 7
 
-        self.t = 1/30.0
+        self.t = 1/15.0
         self.device = device
         
-        self.P0 = torch.zeros(state_size,state_size) # state covariance
+        self.P0 = torch.zeros(self.state_size,self.state_size) # state covariance
 
-        self.F = torch.zeros(state_size,state_size) # dynamical model
-        self.H = torch.zeros(meas_size,state_size)  # measurement model
-        self.Q = torch.zeros(state_size,state_size) # model covariance
-        self.R = torch.zeros(meas_size,meas_size)   # measurement covariance
+        self.F = torch.zeros(self.state_size,self.state_size) # dynamical model
+        self.H = torch.zeros(self.meas_size,self.state_size)  # measurement model
+        self.Q = torch.zeros(self.state_size,self.state_size) # model covariance
+        self.R = torch.zeros(self.meas_size,self.meas_size)   # measurement covariance
         
         # obj_ids[a] stores index in X along dim 0 where object a is stored
         self.obj_idxs = {}
@@ -43,20 +42,17 @@ class Torch_KF(object):
         
         if INIT is None:
             # set intial value for state covariance
-            self.P0 = torch.eye(state_size).unsqueeze(0) * state_err
+            self.P0 = torch.eye(self.state_size).unsqueeze(0) * state_err
             
             # these values won't change 
-            self.F = torch.eye(state_size).float()
+            self.F = torch.eye(self.state_size).float()
             self.F[[0,1,2],[4,5,6]] = self.t
             self.H[:4,:4] = torch.eye(4)
-            self.Q = torch.eye(state_size).unsqueeze(0) * mod_err                     #+ 1
-            self.R = torch.eye(meas_size).unsqueeze(0) * meas_err
+            self.Q = torch.eye(self.state_size).unsqueeze(0) * mod_err                     #+ 1
+            self.R = torch.eye(self.meas_size).unsqueeze(0) * meas_err
+            self.mu_Q = torch.zeros([1,self.state_size])
             
-            self.F = self.F.to(device)
-            self.H = self.H.to(device)
-            self.Q = self.Q.to(device)
-            self.R = self.R.to(device)
-            self.P0 = self.P0.to(device)
+            
             
         else:
             self.P0 = INIT["P"].unsqueeze(0)
@@ -64,7 +60,15 @@ class Torch_KF(object):
             self.H  = INIT["H"]
             self.Q  = INIT["Q"].unsqueeze(0)
             self.R  = INIT["R"].unsqueeze(0)
-
+            self.mu_Q = INIT["mu_Q"].unsqueeze(0)
+        
+        self.F = self.F.to(device).float()
+        self.H = self.H.to(device).float()
+        self.Q = self.Q.to(device).float()
+        self.R = self.R.to(device).float()
+        self.P0 = self.P0.to(device).float()
+        self.mu_Q = self.mu_Q.to(device).float()
+        
         
         
     def add(self,detections,obj_ids):
@@ -76,9 +80,9 @@ class Torch_KF(object):
         
         newX = torch.zeros((len(detections),self.state_size)) 
         try:
-            newX[:,:4] = torch.from_numpy(detections).to(self.device)
+            newX[:,:self.meas_size] = torch.from_numpy(detections).to(self.device)
         except:
-            newX[:,:4] = detections.to(self.device)
+            newX[:,:self.meas_size] = detections.to(self.device)
             
         newP = self.P0.repeat(len(obj_ids),1,1)
 
@@ -125,7 +129,7 @@ class Torch_KF(object):
         ### Neeed to figure out whether to invert F for updating
         
         # update X --> X = XF--> [n,7] x [7,7] = [n,7]
-        self.X = torch.mm(self.X,self.F.transpose(0,1)) 
+        self.X = torch.mm(self.X,self.F.transpose(0,1)) + self.mu_Q
         
         # update P --> P = FPF^(-1) + Q --> [nx7x7] = [nx7x7] bx [nx7x7] bx [nx7x7] + [n+7x7]
         F_rep = self.F.unsqueeze(0).repeat(len(self.P),1,1)
@@ -219,7 +223,7 @@ if __name__ == "__main__":
             colors2 = colors.copy()
             colors[:,3]  = 0.2
             colors2[:,3] = 1
-            filter = torch_KF(device)
+            filter = Torch_KF(device)
             
             start_time = time.time()
             

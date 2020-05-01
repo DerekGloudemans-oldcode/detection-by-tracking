@@ -449,7 +449,7 @@ def skip_track(track_path, tracker, det_step = 1, PLOT = True):
 
 
             
-        else: # use Resnet  
+        elif True: # use Resnet  
             # 3b. crop tracked objects from image
             start = time.time()
             # use predicted states to crop relevant portions of frame 
@@ -469,7 +469,9 @@ def skip_track(track_path, tracker, det_step = 1, PLOT = True):
             # use either s or s x r for both dimensions, whichever is larger,so crop is square
             #box_scales = np.max(np.stack((boxes[:,2],boxes[:,2]*boxes[:,3]),axis = 1),axis = 1)
             box_scales = np.min(np.stack((boxes[:,2],boxes[:,2]*boxes[:,3]),axis = 1),axis = 1) #/2.0
-
+                
+            #expand box slightly
+            box_scales = box_scales * 1.3
             
             new_boxes[:,1] = boxes[:,0] - box_scales/2
             new_boxes[:,3] = boxes[:,0] + box_scales/2 
