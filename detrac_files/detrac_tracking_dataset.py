@@ -83,7 +83,7 @@ class Track_Dataset(data.Dataset):
                         objects[id]['box'] = [new_bbox]
                         objects[id]['im'] = [path]
                         
-            # get rid of object ids and just keep list of bboxes
+            # get rid of object ids and just keep list of bboxes, important to do this every track because ids repeat
             for id in objects:
                 label_list.append(np.array(objects[id]['box']))
                 im_list.append(objects[id]['im'])

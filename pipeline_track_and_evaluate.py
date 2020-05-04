@@ -24,7 +24,7 @@ if __name__ == "__main__":
     # input parameters
     det_step = 11
     srr = 1
-    ber = 1.1
+    ber = 1.3
     
 
     
@@ -53,7 +53,8 @@ if __name__ == "__main__":
     # for each track and for specified det_step, track and evaluate
     for id in tracks:
         # track
-        with open("velocity_fitted_Q.cpkl", 'rb') as f:
+        #with open("velocity_fitted_Q.cpkl", 'rb') as f:
+        with open("velocity_fitted_Q_R.cpkl", 'rb') as f:
             kf_params = pickle.load(f)
         
         tracker = Torch_KF("cpu",mod_err = 1, meas_err = 1, state_err = 0, INIT = kf_params)

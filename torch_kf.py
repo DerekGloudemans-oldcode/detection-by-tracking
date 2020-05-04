@@ -51,7 +51,8 @@ class Torch_KF(object):
             self.Q = torch.eye(self.state_size).unsqueeze(0) * mod_err                     #+ 1
             self.R = torch.eye(self.meas_size).unsqueeze(0) * meas_err
             self.mu_Q = torch.zeros([1,self.state_size])
-            
+            self.mu_R = torch.zeros([1,self.meas_size])
+
             
             
         else:
@@ -61,6 +62,7 @@ class Torch_KF(object):
             self.Q  = INIT["Q"].unsqueeze(0)
             self.R  = INIT["R"].unsqueeze(0)
             self.mu_Q = INIT["mu_Q"].unsqueeze(0)
+            self.mu_R = INIT["mu_R"].unsqueeze(0)
         
         self.F = self.F.to(device).float()
         self.H = self.H.to(device).float()
@@ -68,7 +70,7 @@ class Torch_KF(object):
         self.R = self.R.to(device).float()
         self.P0 = self.P0.to(device).float()
         self.mu_Q = self.mu_Q.to(device).float()
-        
+        self.mu_R = self.mu_R.to(device).float()
         
         
     def add(self,detections,obj_ids):
@@ -157,7 +159,7 @@ class Torch_KF(object):
             z = torch.from_numpy(detections).to(self.device)
         except:
              z = detections.to(self.device)
-        y = z - torch.mm(X_up, self.H.transpose(0,1))
+        y = z - (torch.mm(X_up, self.H.transpose(0,1)) )#+ self.mu_R)              #################################### Not sure if this is right but..
         
         # covariance innovation --> HPHt + R --> [mx4x4] = [mx4x7] bx [mx7x7] bx [mx4x7]t + [mx4x4]
         # where bx is batch matrix multiplication broadcast along dim 0
