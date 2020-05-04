@@ -21,12 +21,17 @@ from torch_kf import Torch_KF#, filter_wrapper
 
 
 if __name__ == "__main__":
-    
     # input parameters
-    det_step = 7
+    det_step = 11
+    srr = 1
+    ber = 1.1
+    
+
+    
     tracks = [40243,20011,20012,63562,63563]
     tracks = [20012,20034,63525,63544,63552,63553,63554,63561,63562,63563]
-    tracks = [63563]
+    tracks = [20034,63525]
+    #tracks = [63563]
     SHOW = True
     
     # get list of all files in directory and corresponding path to track and labels
@@ -53,7 +58,12 @@ if __name__ == "__main__":
         
         tracker = Torch_KF("cpu",mod_err = 1, meas_err = 1, state_err = 0, INIT = kf_params)
         frames = track_dict[id]["frames"]
-        preds, Hz, time_metrics = track_utils.skip_track(frames,tracker,det_step = det_step,PLOT = SHOW)
+        preds, Hz, time_metrics = track_utils.skip_track(frames,
+                                                         tracker,
+                                                         det_step = det_step, 
+                                                         ber = ber, 
+                                                         srr = srr,
+                                                         PLOT = SHOW)
   
         # get ground truth labels
         gts,metadata = mot.parse_labels(track_dict[id]["labels"])
@@ -73,9 +83,9 @@ if __name__ == "__main__":
                 running_metrics[key] = metrics[key][0]
                 
     # average results  
-    print("Average Metrics for {} tracks with det step = {}:".format(len(tracks),det_step))    
+    print(ber,srr)
+    print("\n\nAverage Metrics for {} tracks with det step = {}:".format(len(tracks),det_step))    
     for key in running_metrics:
         running_metrics[key] /= len(tracks)
         print(" {}: {}".format(key,running_metrics[key]))
-         
     

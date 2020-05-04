@@ -36,7 +36,7 @@ class Track_Dataset(data.Dataset):
     need to partition data manually by separate directories
     """
     
-    def __init__(self, label_dir,n = 8):
+    def __init__(self, image_dir,label_dir,n = 8):
         """ initializes object
         image dir - (string) - a directory containing a subdirectory for each track sequence
         label dir - (string) - a directory containing a label file per sequence
@@ -45,6 +45,7 @@ class Track_Dataset(data.Dataset):
         
         # parse labels and store in dict keyed by track name
         label_list = []
+        im_list = []
         for item in os.listdir(label_dir):
             name = item.split("_v3.xml")[0].split("MVI_")[-1]
             if int(name) in  [20012,20034,63525,63544,63552,63553,63554,63561,63562,63563]:
@@ -56,7 +57,12 @@ class Track_Dataset(data.Dataset):
             objects = {}
             
             
-            for frame in detections:
+            for num, frame in enumerate(detections):
+                num = num + 1 
+                
+                # save path to frame
+                path = os.path.join(image_dir,"MVI_" + name,'img' + str(num).zfill(5) + '.jpg')
+                
                 for item in frame:
                     id = item['id']
                     bbox = item['bbox']
@@ -70,16 +76,20 @@ class Track_Dataset(data.Dataset):
                     
                     
                     if id in objects.keys():
-                        objects[id].append(new_bbox)
+                        objects[id]['box'].append(new_bbox)
+                        objects[id]["im"].append(path)
                     else:
-                        objects[id] = [new_bbox]
+                        objects[id] = {}
+                        objects[id]['box'] = [new_bbox]
+                        objects[id]['im'] = [path]
                         
             # get rid of object ids and just keep list of bboxes
             for id in objects:
-                label_list.append(np.array(objects[id]))
+                label_list.append(np.array(objects[id]['box']))
+                im_list.append(objects[id]['im'])
                 
         self.label_list = label_list
-        
+        self.im_list = im_list
         # parse_labels returns a list (one frame per index) of lists, where 
         # each item in the sublist is one object
         # so we need to go through and keep a running record of all objects, indexed by id
@@ -103,8 +113,12 @@ class Track_Dataset(data.Dataset):
             data = self.label_list[index]
         
         start = np.random.randint(0,len(data)-self.n)
-        return data[start:start+self.n,:]
+        data = data[start:start+self.n,:]
         
+        ims = self.im_list[index]
+        ims = ims[start:start+self.n]
+        
+        return data, ims
         
     def parse_labels(self,label_file):
         """
@@ -220,8 +234,9 @@ if __name__ == "__main__":
             test = Track_Dataset(label_dir)
     
         except:
+            image_dir = "/home/worklab/Desktop/detrac/DETRAC-all-data"
             label_dir = "/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3"
-            test = Track_Dataset(label_dir)
+            test = Track_Dataset(image_dir,label_dir)
     idx = np.random.randint(0,len(test))
     
     cv2.destroyAllWindows()

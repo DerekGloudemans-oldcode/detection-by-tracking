@@ -278,7 +278,7 @@ def plot(im,detections,post_locations,all_classes,class_dict,frame = None):
     if frame is not None:
         cv2.imwrite("output/{}.png".format(str(frame).zfill(4)),im*255)
 
-def skip_track(track_path, tracker, det_step = 1, PLOT = True):
+def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True):
         
     init_frames = 3
     
@@ -471,7 +471,7 @@ def skip_track(track_path, tracker, det_step = 1, PLOT = True):
             box_scales = np.min(np.stack((boxes[:,2],boxes[:,2]*boxes[:,3]),axis = 1),axis = 1) #/2.0
                 
             #expand box slightly
-            box_scales = box_scales * 1.3
+            box_scales = box_scales * ber# box expansion ratio
             
             new_boxes[:,1] = boxes[:,0] - box_scales/2
             new_boxes[:,3] = boxes[:,0] + box_scales/2 
@@ -522,7 +522,7 @@ def skip_track(track_path, tracker, det_step = 1, PLOT = True):
             
             #lastly, replace scale and ratio with original values 
             ## NOTE this is kind of a cludgey fix and ideally localizer should be better
-            output[:,2:4] = boxes[:,2:4] 
+            output[:,2:4] = srr*output[:,2:4] + (1-srr)*boxes[:,2:4] 
             time_metrics['post_localize'] += time.time() - start
 
             # 6b. Update tracker
@@ -551,7 +551,7 @@ def skip_track(track_path, tracker, det_step = 1, PLOT = True):
    
             
         # increment frame counter 
-        if frame_num % 30 == 0:
+        if frame_num % 1000 == 0:
             print("Finished frame {}".format(frame_num))
         frame_num += 1
         torch.cuda.empty_cache()
@@ -565,11 +565,12 @@ def skip_track(track_path, tracker, det_step = 1, PLOT = True):
     for key in time_metrics:
         total_time += time_metrics[key]
     
-    print("Finished file {} for det_step {}".format(track_path,det_step))
-    print("\n\nTotal Framerate: {:.2f} fps".format(n_frames/total_time))
-    print("---------- per operation ----------")
-    for key in time_metrics:
-        print("{:.3f}s ({:.2f}%) on {}".format(time_metrics[key],time_metrics[key]/total_time*100,key))
+    if False:
+        print("Finished file {} for det_step {}".format(track_path,det_step))
+        print("\n\nTotal Framerate: {:.2f} fps".format(n_frames/total_time))
+        print("---------- per operation ----------")
+        for key in time_metrics:
+            print("{:.3f}s ({:.2f}%) on {}".format(time_metrics[key],time_metrics[key]/total_time*100,key))
 
 
     #write final output 
