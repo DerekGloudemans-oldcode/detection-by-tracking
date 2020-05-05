@@ -376,7 +376,7 @@ def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True)
             pre_loc = np.array(pre_loc)
             
             # matchings[i] = [a,b] where a is index of pre_loc and b is index of detection
-            matchings = match_hungarian(pre_loc,detections[:,:4],iou_cutoff = 0.2)
+            matchings = match_hungarian(pre_loc,detections[:,:4],iou_cutoff = 0.05)
             time_metrics['match'] += time.time() - start
             
             # try:
@@ -498,6 +498,7 @@ def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True)
             for i in range(len(cls_preds)):
                 all_classes[box_ids[i]][cls_preds[i].item()] += 1
             
+            
             # 5b. convert to global image coordinates 
                 
             # these detections are relative to crops - convert to global image coords
@@ -518,12 +519,13 @@ def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True)
             output[:,1] = (detections[:,1] + detections[:,3]) / 2.0
             output[:,2] = (detections[:,2] - detections[:,0])
             output[:,3] = (detections[:,3] - detections[:,1]) / output[:,2]
-            detections = output
+            
             
             #lastly, replace scale and ratio with original values 
             ## NOTE this is kind of a cludgey fix and ideally localizer should be better
             output[:,2:4] = srr*output[:,2:4] + (1-srr)*boxes[:,2:4] 
             time_metrics['post_localize'] += time.time() - start
+            detections = output
 
             # 6b. Update tracker
             start = time.time()
@@ -539,7 +541,7 @@ def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True)
         start = time.time()
         post_locations = tracker.objs()
         for id in post_locations:
-            all_tracks[id][frame_num,:] = post_locations[id]        
+            all_tracks[id][frame_num,:] = post_locations[id][:7]        
         time_metrics['store'] += time.time() - start  
         
         

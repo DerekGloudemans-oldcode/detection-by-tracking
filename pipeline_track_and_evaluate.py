@@ -23,15 +23,15 @@ from torch_kf import Torch_KF#, filter_wrapper
 if __name__ == "__main__":
     # input parameters
     det_step = 11
-    srr = 1
-    ber = 1.3
+    srr = 0
+    ber = 1
     
 
     
     tracks = [40243,20011,20012,63562,63563]
     tracks = [20012,20034,63525,63544,63552,63553,63554,63561,63562,63563]
     tracks = [20034,63525]
-    #tracks = [63563]
+    tracks = [63563]
     SHOW = True
     
     # get list of all files in directory and corresponding path to track and labels
@@ -54,7 +54,8 @@ if __name__ == "__main__":
     for id in tracks:
         # track
         #with open("velocity_fitted_Q.cpkl", 'rb') as f:
-        with open("velocity_fitted_Q_R.cpkl", 'rb') as f:
+        with open("filter_states/velocity_Q_R.cpkl", 'rb') as f:
+        #with open("filter_states/acceleration_Q.cpkl",'rb') as f:
             kf_params = pickle.load(f)
         
         tracker = Torch_KF("cpu",mod_err = 1, meas_err = 1, state_err = 0, INIT = kf_params)
@@ -71,7 +72,7 @@ if __name__ == "__main__":
         ignored_regions = metadata['ignored_regions']
 
         # match and evaluate
-        metrics,acc = mot.evaluate_mot(preds,gts,ignored_regions,threshold = 40)
+        metrics,acc = mot.evaluate_mot(preds,gts,ignored_regions,threshold = 0.9)
         metrics = metrics.to_dict()
         metrics["framerate"] = {0:Hz}
 

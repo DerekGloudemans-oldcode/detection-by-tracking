@@ -174,15 +174,18 @@ kf_params = {
         "Q":tracker.Q.squeeze(0),
         "R":tracker.R.squeeze(0),
         "F":tracker.F,
-        "H":tracker.H
+        "H":tracker.H,
+        "mu_Q":tracker.mu_Q,
+        "mu_R":tracker.mu_R
         }
 
-with open("velocity_fitted_Q.cpkl","rb") as f:
+with open("filter_states/acceleration_baseline.cpkl","rb") as f:
     kf_params = pickle.load(f)
-
-
+    kf_params["mu_R"] = torch.zeros([1,4])
+    kf_params["mu_Q"] = torch.zeros([1,9])
+    
 # fit Q and mu_Q
-if False:
+if True:
     error_vectors = []
     for iteration in range(1000):
         
@@ -220,8 +223,15 @@ if False:
             pos_next = batch[:,frame+1,:]
             
             vel = ( (pos_next - pos) + (pos - pos_prev) ) / 2.0
-            
             gt = torch.cat((pos, vel[:,:3]),dim = 1)
+            
+            
+            if True:
+                pos2_prev = batch[:,frame-2,:]
+                prev_vel = ( (pos-pos_prev) + (pos_prev - pos2_prev) ) / 2.0
+                acc = (vel - prev_vel)[:,:2]
+                gt = torch.cat((gt, acc),dim = 1)
+
             error = gt - pred
             error = error.mean(dim = 0)
             error_vectors.append(error)
@@ -231,19 +241,19 @@ if False:
     error_vectors = torch.stack(error_vectors,dim = 0)
     mean = torch.mean(error_vectors, dim = 0)
     
-    covariance = torch.zeros((7,7))
+    covariance = torch.zeros((9,9))
     for vec in error_vectors:
         covariance += torch.mm((vec - mean).unsqueeze(1), (vec-mean).unsqueeze(1).transpose(0,1))
         
     kf_params["mu_Q"] = mean
     kf_params["Q"] = covariance
     
-    #with open("velocity_fitted_Q.cpkl","wb") as f:
-    #    pickle.dump(kf_params,f)
+    with open("filter_states/acceleration_Q.cpkl","wb") as f:
+        pickle.dump(kf_params,f)
     
     
 # fit H and mu_H
-if True:
+if False:
     error_vecs = []
     
     for iteration in range(50):
@@ -331,7 +341,7 @@ if True:
     for vec in error_vectors:
         covariance += torch.mm((vec - mean).unsqueeze(1), (vec-mean).unsqueeze(1).transpose(0,1))
         
-    covariance = covariance / 99.0
+    covariance = covariance / iteration
     
     kf_params["mu_R"] = mean
     kf_params["R"] = covariance

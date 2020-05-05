@@ -190,20 +190,39 @@ def evaluate_mot(preds,gts,ignored_regions = [],threshold = 100):
         pred_ids = np.array(pred_ids)
         
         # get distance matrix in desired format
-        dist = np.zeros([len(gt_ids),len(pred_ids)])
-        for i in range(len(gt_ids)):
-            for j in range(len(pred_ids)):
-                # ground truth object center
-                gx = (gt[i]["bbox"][0] + gt[i]['bbox'][2]) /2.0
-                gy = (gt[i]["bbox"][1] + gt[i]['bbox'][3]) /2.0
-                
-                # pred object center
-                px = (pred[j]["bbox"][0] + pred[j]['bbox'][2]) /2.0
-                py = (pred[j]["bbox"][1] + pred[j]['bbox'][3]) /2.0
-                
-                d = np.sqrt((px-gx)**2 + (py-gy)**2)
-                dist[i,j] = d
         
+        if False: # use distance for matching
+            dist = np.zeros([len(gt_ids),len(pred_ids)])
+            for i in range(len(gt_ids)):
+                for j in range(len(pred_ids)):
+                    # ground truth object center
+                    gx = (gt[i]["bbox"][0] + gt[i]['bbox'][2]) /2.0
+                    gy = (gt[i]["bbox"][1] + gt[i]['bbox'][3]) /2.0
+                    
+                    # pred object center
+                    px = (pred[j]["bbox"][0] + pred[j]['bbox'][2]) /2.0
+                    py = (pred[j]["bbox"][1] + pred[j]['bbox'][3]) /2.0
+                    
+                    d = np.sqrt((px-gx)**2 + (py-gy)**2)
+                    dist[i,j] = d
+        
+        else: # use iou for matching
+            dist = np.ones([len(gt_ids),len(pred_ids)])
+            for i in range(len(gt_ids)):
+                for j in range(len(pred_ids)):
+                    minx = max(gt[i]["bbox"][0],pred[j]["bbox"][0])
+                    maxx = min(gt[i]["bbox"][2],pred[j]["bbox"][2])
+                    miny = max(gt[i]["bbox"][1],pred[j]["bbox"][1])
+                    maxy = min(gt[i]["bbox"][3],pred[j]["bbox"][3])
+                    
+                    intersection = max(0,maxx-minx) * max(0,maxy-miny)
+                    a1 = (gt[i]["bbox"][2] - gt[i]['bbox'][0]) * (gt[i]["bbox"][3] - gt[i]['bbox'][1])
+                    a2 = (pred[j]["bbox"][2] - pred[j]['bbox'][0]) * (pred[j]["bbox"][3] - pred[j]['bbox'][1])
+                    
+                    union = a1+a2-intersection
+                    iou = intersection / union
+                    dist[i,j] = 1-iou
+            
         # if detection isn't close to any object (> threshold), remove
         # this is a cludgey fix since the detrac dataset doesn't have all of the vehicles labeled
         # get columnwise min

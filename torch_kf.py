@@ -61,9 +61,18 @@ class Torch_KF(object):
             self.H  = INIT["H"]
             self.Q  = INIT["Q"].unsqueeze(0)
             self.R  = INIT["R"].unsqueeze(0)
-            self.mu_Q = INIT["mu_Q"].unsqueeze(0)
+            self.mu_Q = INIT["mu_Q"].unsqueeze(0) 
             self.mu_R = INIT["mu_R"].unsqueeze(0)
-        
+            
+            self.state_size = self.F.shape[0]
+            self.meas_size =  self.H.shape[0]
+            
+            self.mu_Q = torch.zeros([1,self.state_size])
+            self.mu_R = torch.zeros([1,self.meas_size])
+            
+            
+            
+        # move to device
         self.F = self.F.to(device).float()
         self.H = self.H.to(device).float()
         self.Q = self.Q.to(device).float()
@@ -159,7 +168,7 @@ class Torch_KF(object):
             z = torch.from_numpy(detections).to(self.device)
         except:
              z = detections.to(self.device)
-        y = z - (torch.mm(X_up, self.H.transpose(0,1)) )#+ self.mu_R)              #################################### Not sure if this is right but..
+        y = z - (torch.mm(X_up, self.H.transpose(0,1)) +self.mu_R)              #################################### Not sure if this is right but..
         
         # covariance innovation --> HPHt + R --> [mx4x4] = [mx4x7] bx [mx7x7] bx [mx4x7]t + [mx4x4]
         # where bx is batch matrix multiplication broadcast along dim 0
@@ -180,7 +189,7 @@ class Torch_KF(object):
         X_up = X_up + step1
         
         # P_updated --> (I-KH)P --> [m,7,7] = ([m,7,7 - [m,7,4] bx [m,4,7]) bx [m,7,7]    
-        I = torch.eye(7).unsqueeze(0).repeat(len(P_up),1,1).to(self.device)
+        I = torch.eye(self.state_size).unsqueeze(0).repeat(len(P_up),1,1).to(self.device)
         step1 = I - torch.bmm(K,H_rep)
         P_up = torch.bmm(step1,P_up)
         
