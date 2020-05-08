@@ -77,7 +77,7 @@ class Torch_KF(object):
         self.H = self.H.to(device).float()
         self.Q = self.Q.to(device).float()
         self.R = self.R.to(device).float()
-        self.P0 = self.P0.to(device).float()
+        self.P0 = self.P0.to(device).float() + 10.0
         self.mu_Q = self.mu_Q.to(device).float()
         self.mu_R = self.mu_R.to(device).float()
         

@@ -278,6 +278,37 @@ def plot(im,detections,post_locations,all_classes,class_dict,frame = None):
     if frame is not None:
         cv2.imwrite("output/{}.png".format(str(frame).zfill(4)),im*255)
 
+def iou(a,b):
+    """
+    Description
+    -----------
+    Calculates intersection over union for all sets of boxes in a and b
+
+    Parameters
+    ----------
+    a : a torch of size [batch_size,4] of bounding boxes.
+    b : a torch of size [batch_size,4] of bounding boxes.
+
+    Returns
+    -------
+    mean_iou - float between [0,1] with average iou for a and b
+    """
+    
+    area_a = a[2] * a[2] * a[3]
+    area_b = b[2] * b[2] * b[3]
+    
+    minx = max(a[0]-a[2]/2, b[0]-b[2]/2)
+    maxx = min(a[0]+a[2]/2, b[0]+b[2]/2)
+    miny = max(a[1]-a[2]*a[3]/2, b[1]-b[2]*b[3]/2)
+    maxy = min(a[1]+a[2]*a[3]/2, b[1]+b[2]*b[3]/2)
+    
+    intersection = max(0, maxx-minx) * max(0,maxy-miny)
+    union = area_a + area_b - intersection
+    iou = intersection/union
+    
+    return iou
+    
+    
 def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True):
         
     init_frames = 3
@@ -297,7 +328,8 @@ def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True)
         detector,localizer = load_models(device)
         
     
-             
+    localizer.eval()
+         
     # Loop Setup
     frames,n_frames = load_all_frames(track_path,det_step,init_frames,cutoff = None)
     
@@ -479,9 +511,32 @@ def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True)
             new_boxes[:,4] = boxes[:,1] + box_scales/2 
             torch_boxes = torch.from_numpy(new_boxes).float().to(device)
             
-            # crop using roi align
-            crops = roi_align(frame.unsqueeze(0),torch_boxes,(224,224))
+            if False: # mask other bboxes
+                # these boxes are not square
+                rect_boxes = np.zeros([len(boxes),4])
+                rect_boxes[:,0] = boxes[:,0] - boxes[:,2] / 2.0
+                rect_boxes[:,1] = boxes[:,1] - boxes[:,2] * boxes[:,3] / 2.0 
+                rect_boxes[:,2] = boxes[:,0] + boxes[:,2] / 2.0
+                rect_boxes[:,3] = boxes[:,1] + boxes[:,2] * boxes[:,3] / 2.0 
+                rect_boxes = rect_boxes.astype(int)
+                frame_copy = frame.clone()
+                for rec in rect_boxes:
+                    frame_copy[:,rec[1]:rec[3],rec[0]:rec[2]] = 0
+                frame_copy = frame_copy.unsqueeze(0).repeat(len(boxes),1,1,1)
+                
+                # in each crop, replace active box with correct pixels
+                for i in range(len(rect_boxes)):
+                    torch_boxes[i,0] = i # so images are indexed correctly
+                    rec = rect_boxes[i]
+                    frame_copy[i,:,rec[1]:rec[3],rec[0]:rec[2]] = frame[:,rec[1]:rec[3],rec[0]:rec[2]]
+            
+            else:
+                frame_copy = frame.unsqueeze(0)
+            # crop using roi align 
+            crops = roi_align(frame_copy,torch_boxes,(224,224))
             time_metrics['pre_localize and align'] += time.time() - start
+            
+            
             
             # 4b. Localize objects using localizer
             start= time.time()
@@ -490,11 +545,11 @@ def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True)
             time_metrics['localize'] += time.time() - start
             
             start = time.time()
-            if False:
+            if  False:
                 test_outputs(reg_out,crops)
             
             # store class predictions
-            _,cls_preds = torch.max(cls_out,1)
+            highest_conf,cls_preds = torch.max(cls_out,1)
             for i in range(len(cls_preds)):
                 all_classes[box_ids[i]][cls_preds[i].item()] += 1
             
@@ -537,6 +592,35 @@ def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True)
             for i in range(len(pre_ids)):
                     fsld[pre_ids[i]] += 1
         
+        
+            # Low confidence removals
+            if True:
+                removals = []
+                locations = tracker.objs()
+                for i in range(len(box_ids)):
+                    if highest_conf[i] < 3 and box_ids[i] in locations:
+                        removals.append(box_ids[i])
+                        print("Removed low confidence object")
+                tracker.remove(removals)
+        
+        # IOU suppression on overlapping bounding boxes
+        if True:
+            removals = []
+            locations = tracker.objs()
+            for i in locations:
+                for j in locations:
+                    if i != j:
+                        iou_metric = iou(locations[i],locations[j])
+                        if iou_metric > 0.5:
+                            # determine which object has been around longer
+                            if len(all_classes[i]) > len(all_classes[j]):
+                                removals.append(j)
+                            else:
+                                removals.append(i)
+            removals = list(set(removals))
+            tracker.remove(removals)
+            
+            
         # 9. Get all object locations and store in output dict
         start = time.time()
         post_locations = tracker.objs()
