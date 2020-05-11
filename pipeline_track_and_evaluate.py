@@ -22,7 +22,7 @@ from torch_kf import Torch_KF#, filter_wrapper
 
 if __name__ == "__main__":
     # input parameters
-    det_step = 11
+    det_step = 15
     srr = 0
     ber = 2
     
@@ -31,8 +31,8 @@ if __name__ == "__main__":
     #tracks = [40243,20011,20012,63562,63563]
     tracks = [20012,20034,63525,63544,63552,63553,63554,63561,63562,63563]
     #tracks = [20034,63525]
-    tracks = [63563]
-    SHOW = True
+    #tracks = [63563]
+    SHOW = False
     
     # get list of all files in directory and corresponding path to track and labels
     track_dir = "/home/worklab/Desktop/detrac/DETRAC-all-data"

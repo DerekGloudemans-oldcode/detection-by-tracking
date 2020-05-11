@@ -511,7 +511,7 @@ def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True)
             new_boxes[:,4] = boxes[:,1] + box_scales/2 
             torch_boxes = torch.from_numpy(new_boxes).float().to(device)
             
-            if False: # mask other bboxes
+            if True: # mask other bboxes
                 # these boxes are not square
                 rect_boxes = np.zeros([len(boxes),4])
                 rect_boxes[:,0] = boxes[:,0] - boxes[:,2] / 2.0
