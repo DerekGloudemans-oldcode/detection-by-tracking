@@ -41,7 +41,6 @@ class FrameLoader():
     
         """
         
-        print("Loading frames into memory.")
         files = []
         for item in [os.path.join(track_directory,im) for im in os.listdir(track_directory)]:
             files.append(item)
@@ -54,11 +53,12 @@ class FrameLoader():
     
         # create shared queue
         #mp.set_start_method('spawn')
-        self.queue = mp.Queue()
+        ctx = mp.get_context('spawn')
+        self.queue = ctx.Queue()
         
         self.frame_idx = 0
         
-        self.worker = mp.Process(target=load_to_queue, args=(self.queue,files,det_step,init_frames,device,))
+        self.worker = ctx.Process(target=load_to_queue, args=(self.queue,files,det_step,init_frames,device,))
         self.worker.start()
         time.sleep(5)
         
@@ -72,10 +72,13 @@ class FrameLoader():
         
             frame = self.queue.get(timeout = 0)
             return frame_num, frame
+        
         else:
+            self.worker.terminate()
+            self.worker.join()
             return -1,None
 
-def load_to_queue(image_queue,files,det_step,init_frames,device,queue_size = 3):
+def load_to_queue(image_queue,files,det_step,init_frames,device,queue_size = 5):
     
     frame_idx = 0    
     while frame_idx < len(files):
@@ -112,7 +115,9 @@ def load_to_queue(image_queue,files,det_step,init_frames,device,queue_size = 3):
               image_queue.put(frame)
              
             frame_idx += 1
-       
+    
+    while True:  
+           time.sleep(5)
         
 if __name__ == "__main__":
     
@@ -138,10 +143,14 @@ if __name__ == "__main__":
     while True:
         start = time.time()
         num, frame = next(test)
-        all_time += (time.time() - start)
         
-        time.sleep(0.05)
-        out = frame[0] + 1
+        if num > 0:
+            all_time += (time.time() - start)
+        
+        time.sleep(0.03)
+       
+        if frame is not None:
+            out = frame[0] + 1
         
         if num == -1:
             break
