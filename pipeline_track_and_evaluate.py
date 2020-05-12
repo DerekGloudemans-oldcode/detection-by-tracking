@@ -32,7 +32,7 @@ if __name__ == "__main__":
     tracks = [20012,20034,63525,63544,63552,63553,63554,63561,63562,63563]
     #tracks = [20034,63525]
     #tracks = [63563]
-    SHOW = True
+    SHOW = False
     
     # get list of all files in directory and corresponding path to track and labels
     track_dir = "/home/worklab/Desktop/detrac/DETRAC-all-data"
@@ -66,7 +66,7 @@ if __name__ == "__main__":
                                                          det_step = det_step,
                                                          init_frames = 3,
                                                          fsld_max = det_step,
-                                                         matching_cutoff = 100,
+                                                         matching_cutoff = 50,
                                                          iou_cutoff = 0.5,
                                                          conf_cutoff = 3,
                                                          srr = srr,

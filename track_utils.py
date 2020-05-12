@@ -68,8 +68,7 @@ def parse_detections(detections, keep = [2,3,5,7]):
     
     return output
 
-
-def match_hungarian(first,second,iou_cutoff = 0.5):
+def match_hungarian(first,second,dist_threshold = 50):
     """
     Description
     -----------
@@ -101,7 +100,6 @@ def match_hungarian(first,second,iou_cutoff = 0.5):
     for i in range(0,len(first)):
         for j in range(0,len(second)):
             dist[i,j] = np.sqrt((first[i,0]-second[j,0])**2 + (first[i,1]-second[j,1])**2)
-            
     a, b = linear_sum_assignment(dist)
     
     # convert into expected form
@@ -110,30 +108,10 @@ def match_hungarian(first,second,iou_cutoff = 0.5):
         matchings[a[idx]] = b[idx]
     matchings = np.ndarray.astype(matchings,int)
     
-    if iou_cutoff > 0:
-        # calculate intersection over union  (IOU) for all matches
-        for i,j in enumerate(matchings):
-            x1_left = first[i][0] -first[i][2]*first[i][3]/2
-            x2_left = second[j][0] -second[j][2]*second[j][3]/2
-            x1_right= first[i][0] + first[i][2]*first[i][3]/2
-            x2_right = second[j][0] +second[j][2]*second[j][3]/2
-            x_intersection = min(x1_right,x2_right) - max(x1_left,x2_left) 
-            
-            y1_left = first[i][1] -first[i][2]/2.0
-            y2_left = second[j][1] -second[j][2]/2.0
-            y1_right= first[i][1] + first[i][2]/2.0
-            y2_right = second[j][1] +second[j][2]/2.0
-            y_intersection = min(y1_right,y2_right) - max(y1_left,y2_left)
-            
-            a1 = first[i,3]*first[i,2]**2 
-            a2 = second[j,3]*second[j,2]**2 
-            intersection = x_intersection*y_intersection
-             
-            iou = intersection / (a1+a2-intersection) 
-            
-            # supress matchings with iou below cutoff
-            if iou < iou_cutoff:
-                matchings[i] = -1
+    # remove any matches too far away
+    for i in range(len(matchings)):
+        if dist[i,matchings[i]] > dist_threshold:
+            matchings[i] = -1
     
     # write into final form
     out_matchings = []
@@ -141,8 +119,7 @@ def match_hungarian(first,second,iou_cutoff = 0.5):
         if matchings[i] != -1:
             out_matchings.append([i,matchings[i]])
     return np.array(out_matchings)   
-  
-      
+       
 def test_outputs(bboxes,crops):
     """
     Description
@@ -191,8 +168,7 @@ def test_outputs(bboxes,crops):
             axs[i//row_size,i%row_size].set_xticks([])
             axs[i//row_size,i%row_size].set_yticks([])
         plt.pause(.001)    
-    
-    
+       
 def load_models(
         device,
         yolo_resolution = 1024,
@@ -239,7 +215,6 @@ def load_models(
     print("Detector and Localizer on {}.".format(device))
     return detector,localizer
     
-
 def load_all_frames(track_directory,det_step,init_frames,cutoff = None): 
     """
     Description 
@@ -564,7 +539,7 @@ def skip_track(track_path,
             pre_loc = np.array(pre_loc)
             
             # matchings[i] = [a,b] where a is index of pre_loc and b is index of detection
-            matchings = match_hungarian(pre_loc,detections[:,:4],iou_cutoff = 0.05)
+            matchings = match_hungarian(pre_loc,detections[:,:4],dist_threshold = matching_cutoff)
             time_metrics['match'] += time.time() - start
             
             
