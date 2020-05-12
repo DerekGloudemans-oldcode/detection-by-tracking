@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 Created on Mon Apr  6 10:49:38 2020
-
 @author: worklab
 """
 
@@ -11,17 +10,36 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 
+
 class Torch_KF(object):
-    def __init__(self,device,state_err = 1, meas_err = 1, mod_err = 1, INIT = None):
+    """
+    A tensor-based Kalman Filter that evaluates many KF-tracked objects in parallel
+    using tensor operations
+    """
+    
+    def __init__(self,device,state_err = 10000, meas_err = 1, mod_err = 1, INIT = None):
+        """
+        Parameters
+        ----------
+        device : torch.device
+            Specifies whether tensors should be stored on GPU or CPU.
+        state_err : float, optional
+            Specifies the starting state covariance value along the main diagonal. The default is 1.
+        meas_err : float, optional
+            Specifies the measurement covariance value along the main diagonal. The default is 1.
+        mod_err : float, optional
+            specifies the model covariance value along the main diagonal. The default is 1.
+        INIT : dictionary, optional
+            A dictionary containing initialization matrices for P0, H, mu_H, Q, and mu_Q. 
+            If specified, these are used instead of the diagonal values
+        """
         # initialize tensors
         self.meas_size = 4
         self.state_size = 7
-
         self.t = 1/15.0
         self.device = device
         
         self.P0 = torch.zeros(self.state_size,self.state_size) # state covariance
-
         self.F = torch.zeros(self.state_size,self.state_size) # dynamical model
         self.H = torch.zeros(self.meas_size,self.state_size)  # measurement model
         self.Q = torch.zeros(self.state_size,self.state_size) # model covariance
@@ -29,16 +47,6 @@ class Torch_KF(object):
         
         # obj_ids[a] stores index in X along dim 0 where object a is stored
         self.obj_idxs = {}
-        
-        #self.obj_history = {}
-        """
-        obj_history template -indexed by integer object id
-        {class: (int),
-         first_frame: (int),
-         detected: (binary list),
-         states: (list of states)
-        }
-        """
         
         if INIT is None:
             # set intial value for state covariance
@@ -54,7 +62,7 @@ class Torch_KF(object):
             self.mu_R = torch.zeros([1,self.meas_size])
 
             
-            
+        # use INIT matrices to initialize filter    
         else:
             self.P0 = INIT["P"].unsqueeze(0)
             self.F  = INIT["F"]
@@ -70,8 +78,7 @@ class Torch_KF(object):
             self.mu_Q = torch.zeros([1,self.state_size])
             self.mu_R = torch.zeros([1,self.meas_size])
             
-        # remove later    
-        self.P0 = torch.eye(self.state_size).unsqueeze(0) * 100000    
+       
         # move to device
         self.F = self.F.to(device).float()
         self.H = self.H.to(device).float()
@@ -84,9 +91,16 @@ class Torch_KF(object):
         
     def add(self,detections,obj_ids):
         """
-        Initializes KF matrices if first object, otherwise adds new object to matrices
-        detection - n x 4 np array with x,y,s,r
-        obj_ids - list of length n with unique obj_id (int) for each detection
+        Description
+        -----------
+        Initializes self.X if this is the first object, otherwise adds new object to X and P 
+        
+        Parameters
+        ----------
+        detection - np array of size [n,4] 
+            Specifies bounding box x,y,scale and ratio for each detection
+        obj_ids - list of length n
+            Unique obj_id (int) for each detection
         """
         
         newX = torch.zeros((len(detections),self.state_size)) 
@@ -115,8 +129,15 @@ class Torch_KF(object):
     
     def remove(self,obj_ids):
         """
+        Description
+        -----------
+        Removes objects indexed by integer id so that they are no longer tracked
         
+        Parameters
+        ----------
+        obj_ids : list of (int) object ids
         """
+        
         keepers = list(range(len(self.X)))
         for id in obj_ids:
             keepers.remove(self.obj_idxs[id])
@@ -135,11 +156,12 @@ class Torch_KF(object):
     
     def predict(self):
         """
-        Uses KF to propagate object locations
+        Description:
+        -----------
+        Uses prediction equations to update X and P without a measurement
         """
-        ### Neeed to figure out whether to invert F for updating
         
-        # update X --> X = XF--> [n,7] x [7,7] = [n,7]
+        # update X --> X = XF + mu_F--> [n,7] x [7,7] + [n,7] = [n,7]
         self.X = torch.mm(self.X,self.F.transpose(0,1)) + self.mu_Q
         
         # update P --> P = FPF^(-1) + Q --> [nx7x7] = [nx7x7] bx [nx7x7] bx [nx7x7] + [n+7x7]
@@ -150,12 +172,20 @@ class Torch_KF(object):
         step4 = self.Q.repeat(len(self.P),1,1)
         self.P = step3 + step4
         
+        
     def update(self,detections,obj_ids):
         """
+        Description
+        -----------
         Updates state for objects corresponding to each obj_id in obj_ids
         Equations taken from: wikipedia.org/wiki/Kalman_filter#Predict
-        detections - nx4
-        obj_ids - list of length n
+        
+        Parameters
+        ----------
+        detection - np array of size [m,4] 
+            Specifies bounding box x,y,scale and ratio for each of m detections
+        obj_ids - list of length m
+            Unique obj_id (int) for each detection
         """
         
         # get relevant portions of X and P
@@ -168,7 +198,7 @@ class Torch_KF(object):
             z = torch.from_numpy(detections).to(self.device)
         except:
              z = detections.to(self.device)
-        y = z - (torch.mm(X_up, self.H.transpose(0,1)) +self.mu_R)              #################################### Not sure if this is right but..
+        y = z + self.mu_H - torch.mm(X_up, self.H.transpose(0,1))  ######### Not sure if this is right but..
         
         # covariance innovation --> HPHt + R --> [mx4x4] = [mx4x7] bx [mx7x7] bx [mx4x7]t + [mx4x4]
         # where bx is batch matrix multiplication broadcast along dim 0
@@ -199,7 +229,10 @@ class Torch_KF(object):
         
     def objs(self):
         """
-        Returns current state of each object as dict
+        Returns
+        -------
+        out_dict - dictionary
+            Current state of each object indexed by obj_id (int)
         """
         
         out_dict = {}

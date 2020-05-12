@@ -184,7 +184,7 @@ def load_models(device):
                 yolo_checkpoint,
                 'pytorch_yolo_v3/data/coco.names',
                 'pytorch_yolo_v3/pallete',
-                resolution = 1024
+                resolution = 768
                 )
             
     localizer = ResNet_Localizer()
@@ -493,6 +493,12 @@ def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True)
                 box_ids.append(id)
                 box_list.append(pre_locations[id][:4])
             boxes = np.array(box_list)
+            
+            if boxes.shape[0] == 0: # no objects, so everything following is skipped
+                frame_num += 1
+                torch.cuda.empty_cache()
+                continue
+                
             
             # convert xysr boxes into xmin xmax ymin ymax
             # first row of zeros is batch index (batch is size 0) for ROI align
