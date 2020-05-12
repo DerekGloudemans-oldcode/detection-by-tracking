@@ -75,6 +75,7 @@ class Torch_KF(object):
             self.state_size = self.F.shape[0]
             self.meas_size =  self.H.shape[0]
             
+            #overwrite means
             self.mu_Q = torch.zeros([1,self.state_size])
             self.mu_R = torch.zeros([1,self.meas_size])
             
@@ -198,7 +199,7 @@ class Torch_KF(object):
             z = torch.from_numpy(detections).to(self.device)
         except:
              z = detections.to(self.device)
-        y = z + self.mu_H - torch.mm(X_up, self.H.transpose(0,1))  ######### Not sure if this is right but..
+        y = z + self.mu_R - torch.mm(X_up, self.H.transpose(0,1))  ######### Not sure if this is right but..
         
         # covariance innovation --> HPHt + R --> [mx4x4] = [mx4x7] bx [mx7x7] bx [mx4x7]t + [mx4x4]
         # where bx is batch matrix multiplication broadcast along dim 0

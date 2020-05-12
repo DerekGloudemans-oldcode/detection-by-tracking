@@ -9,8 +9,6 @@ import os
 import numpy as np
 import random 
 import time
-import math
-import _pickle as pickle
 random.seed = 0
 
 import cv2
@@ -22,12 +20,29 @@ from torchvision.ops import roi_align
 import matplotlib.pyplot  as plt
 from scipy.optimize import linear_sum_assignment
 
-from detrac_files.detrac_train_localizer import ResNet_Localizer, load_model, class_dict
+from detrac_files.detrac_train_localizer import ResNet_Localizer, class_dict
 from pytorch_yolo_v3.yolo_detector import Darknet_Detector
 from torch_kf import Torch_KF#, filter_wrapper
 
 
-def parse_detections(detections):
+def parse_detections(detections, keep = [2,3,5,7]):
+    """
+    Description
+    -----------
+    Removes any duplicates from raw YOLO detections and converts from 8-D Yolo
+    outputs to 6-d form needed for tracking
+    
+    input form --> batch_idx, xmin,ymin,xmax,ymax,objectness,max_class_conf, class_idx 
+    output form --> x_center,y_center, scale, ratio, class_idx, max_class_conf
+    
+    Parameters
+    ----------
+    detections - tensor [n,8]
+        raw YOLO-format object detections
+    keep - list of int
+        class indices to keep, default are vehicle class indexes (car, truck, motorcycle, bus)
+    """
+    
     # remove duplicates
     detections = detections.unique(dim = 0)
     
@@ -36,7 +51,6 @@ def parse_detections(detections):
     
     output = torch.zeros(detections.shape[0],6)
     detections  =  detections[:,1:]
-    
     output[:,0] = (detections[:,0] + detections[:,2]) / 2.0
     output[:,1] = (detections[:,1] + detections[:,3]) / 2.0
     output[:,2] = (detections[:,2] - detections[:,0])
@@ -44,22 +58,43 @@ def parse_detections(detections):
     output[:,4] =  detections[:,6]
     output[:,5] =  detections[:,5]
     
+    # prunes out all non-vehicle classes (dataset specific)
     prune_output = []
     for i in range(len(output)):
-        if int(output[i,4]) in [2,3,5,7]:
+        if int(output[i,4]) in keep:
             prune_output.append(i)
     
     output = output[prune_output,:]
     
     return output
 
+
 def match_hungarian(first,second,iou_cutoff = 0.5):
     """
+    Description
+    -----------
     performs  optimal (in terms of sum distance) matching of points 
     in first to second using the Hungarian algorithm
+    
     inputs - N x 2 arrays of object x and y coordinates from different frames
     output - M x 1 array where index i corresponds to the second frame object 
-    matched to the first frame object i
+        matched to the first frame object i
+
+    Parameters
+    ----------
+    first - np.array [n,2]
+        object x,y coordinates for first frame
+    second - np.array [m,2]
+        object x,y coordinates for second frame
+    iou_cutoff - float in range[0,1]
+        Intersection over union threshold below which match will not be considered
+    
+    Returns
+    -------
+    out_matchings - np.array [l]
+        index i corresponds to second frame object matched to first frame object i
+        l is not necessarily equal to either n or m (can have unmatched object from both frames)
+    
     """
     # find distances between first and second
     dist = np.zeros([len(first),len(second)])
@@ -75,7 +110,7 @@ def match_hungarian(first,second,iou_cutoff = 0.5):
         matchings[a[idx]] = b[idx]
     matchings = np.ndarray.astype(matchings,int)
     
-    if True:
+    if iou_cutoff > 0:
         # calculate intersection over union  (IOU) for all matches
         for i,j in enumerate(matchings):
             x1_left = first[i][0] -first[i][2]*first[i][3]/2
@@ -99,46 +134,35 @@ def match_hungarian(first,second,iou_cutoff = 0.5):
             # supress matchings with iou below cutoff
             if iou < iou_cutoff:
                 matchings[i] = -1
+    
+    # write into final form
     out_matchings = []
     for i in range(len(matchings)):
         if matchings[i] != -1:
             out_matchings.append([i,matchings[i]])
     return np.array(out_matchings)   
- 
-def match_greedy(first,second,threshold = 10):
-    """
-    performs  greedy best-first matching of objects between frames
-    inputs - N x 2 arrays of object x and y coordinates from different frames
-    output - M x 1 array where index i corresponds to the second frame object 
-    matched to the first frame object i
-    """
-
-    # find distances between first and second
-    dist = np.zeros([len(first),len(second)])
-    for i in range(0,len(first)):
-        for j in range(0,len(second)):
-            dist[i,j] = np.sqrt((first[i,0]-second[j,0])**2 + (first[i,1]-second[j,1])**2)
-    
-    # select closest pair
-    matchings = np.zeros(len(first))-1
-    unflat = lambda x: (x//len(second), x %len(second))
-    while np.min(dist) < threshold:
-        min_f, min_s = unflat(np.argmin(dist))
-        #print(min_f,min_s,len(first),len(second),len(matchings),np.argmin(dist))
-        matchings[min_f] = min_s
-        dist[:,min_s] = np.inf
-        dist[min_f,:] = np.inf
-        
-    return np.ndarray.astype(matchings,int)    
+  
       
 def test_outputs(bboxes,crops):
+    """
+    Description
+    -----------
+    Generates a plot of the bounding box predictions output by the localizer so
+    performance of this component can be visualized
+    
+    Parameters
+    ----------
+    bboxes - tensor [n,4] 
+        bounding boxes output for each crop by localizer network
+    crops - tensor [n,3,width,height] (here width and height are both 224)
+    """
+    
     # define figure subplot grid
     batch_size = len(crops)
     row_size = min(batch_size,8)
     fig, axs = plt.subplots((batch_size+row_size-1)//row_size, row_size, constrained_layout=True)
     
-    for i in range(0,len(crops)):
-        
+    for i in range(0,len(crops)):    
         # get image
         im   = crops[i].data.cpu().numpy().transpose((1,2,0))
         mean = np.array([0.485, 0.456, 0.406])
@@ -147,55 +171,100 @@ def test_outputs(bboxes,crops):
         im   = np.clip(im, 0, 1)
         
         # get predictions
-        
         bbox = bboxes[i].data.cpu().numpy()
         
         wer = 3
         imsize = 224
         
         # transform bbox coords back into im pixel coords
-        bbox = (bbox* 224*wer - 224*(wer-1)/2).astype(int)
+        bbox = (bbox* imsize*wer - imsize*(wer-1)/2).astype(int)
         # plot pred bbox
         im = cv2.rectangle(im,(bbox[0],bbox[1]),(bbox[2],bbox[3]),(0.1,0.6,0.9),2)
         im = im.get()
-        
-        # title with class preds and gt
-        label = "{} -> ({})".format(" ", " ")
 
         if batch_size <= 8:
             axs[i].imshow(im)
-            axs[i].set_title(label)
             axs[i].set_xticks([])
             axs[i].set_yticks([])
         else:
             axs[i//row_size,i%row_size].imshow(im)
-            axs[i//row_size,i%row_size].set_title(label)
             axs[i//row_size,i%row_size].set_xticks([])
             axs[i//row_size,i%row_size].set_yticks([])
         plt.pause(.001)    
     
-def load_models(device):
-    yolo_checkpoint =   "/home/worklab/Desktop/checkpoints/yolo/yolov3.weights"
-    resnet_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer/CPU_resnet18_epoch4.pt"
-    resnet_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain2/cpu_resnet18_epoch14.pt"
+    
+def load_models(
+        device,
+        yolo_resolution = 1024,
+        yolo_checkpoint =  "/home/worklab/Desktop/checkpoints/yolo/yolov3.weights",
+        localizer_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain2/cpu_resnet18_epoch14.pt"
+        ):
+    """
+    Description
+    -----------
+    Loads Localizer and Detector networks
+
+    Parameters
+    ----------
+    device : torch.device
+        specifies device on which localizer and detector should be located
+    yolo_resolution : int (divisible by 32), optional
+        Resolution to which YOLO detector expects images to be resized The default is 1024.
+    yolo_checkpoint : str, optional
+        path to yolo weights. The default is "/home/worklab/Desktop/checkpoints/yolo/yolov3.weights".
+    resnet_checkpoint : str, optional
+        path to localizer checkpoint. The default is "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain2/cpu_resnet18_epoch14.pt"
+
+    Returns
+    -------
+    detector : Darknet_Detector (YOLO network)
+        Pytorch Yolo object detector network
+    localizer : torch.nn
+        Resnet object localization and classification network
+    """
 
     detector = Darknet_Detector(
                 'pytorch_yolo_v3/cfg/yolov3.cfg',
                 yolo_checkpoint,
                 'pytorch_yolo_v3/data/coco.names',
                 'pytorch_yolo_v3/pallete',
-                resolution = 768
+                resolution = yolo_resolution
                 )
             
     localizer = ResNet_Localizer()
-    cp = torch.load(resnet_checkpoint)
+    cp = torch.load(localizer_checkpoint)
     localizer.load_state_dict(cp['model_state_dict']) 
     localizer = localizer.to(device)
     
     print("Detector and Localizer on {}.".format(device))
     return detector,localizer
     
+
 def load_all_frames(track_directory,det_step,init_frames,cutoff = None): 
+    """
+    Description 
+    -----------
+    Loads all frames into memory, useful for short tracks to decrease computation time
+
+    Parameters
+    ----------
+    track_directory : str
+        Path to frames 
+    det_step : int
+        How often full detection is performed, necessary for image pre-processing
+    init_frames : int
+        Number of frames used to initialize Kalman filter every det_step frames
+    cutoff : int, optional
+        If not None, only this many frames are loaded into memory. The default is None.
+
+    Returns
+    -------
+    frames : list of tensors
+        Preprocessed tensor images of various sizes depending on localizer and detectorr expected sizes.
+    n_frames : int
+        Number of frames
+    """
+    
     print("Loading frames into memory.")
     files = []
     frames = []
@@ -237,8 +306,34 @@ def load_all_frames(track_directory,det_step,init_frames,cutoff = None):
     return frames,n_frames
         
 def plot(im,detections,post_locations,all_classes,class_dict,frame = None):
+    """
+    Description
+    -----------
+    Plots the detections and the estimated locations of each object after 
+    Kalman Filter update step
+
+    Parameters
+    ----------
+    im : cv2 image
+        The frame
+    detections : tensor [n,4]
+        Detections output by either localizer or detector (xysr form)
+    post_locations : tensor [m,4] 
+        Estimated object locations after update step (xysr form)
+    all_classes : dict
+        indexed by object id, where each entry is a list of the predicted class (int)
+        for that object at every frame in which is was detected. The most common
+        class is assumed to be the correct class        
+    class_dict : dict
+        indexed by class int, the string class names for each class
+    frame : int, optional
+        If not none, the resulting image will be saved with this frame number in file name.
+        The default is None.
+    """
+    
     im = im.copy()/255.0
 
+    # plot detection bboxes
     for det in detections:
         bbox = det[:4]
         color = (0.4,0.4,0.7) #colors[int(obj.cls)]
@@ -246,17 +341,18 @@ def plot(im,detections,post_locations,all_classes,class_dict,frame = None):
         c2 =  (int(bbox[0]+bbox[2]/2),int(bbox[1]+bbox[2]*bbox[3]/2))
         cv2.rectangle(im,c1,c2,color,1)
         
+    # plot estimated locations
     for id in post_locations:
-        # plot bbox
+        # get class
         try:
             most_common = np.argmax(all_classes[id])
             cls = class_dict[most_common]
         except:
-            cls = ""
+            cls = "" 
         label = "{} {}".format(cls,id)
         bbox = post_locations[id][:4]
-        if sum(bbox) != 0:
-
+        
+        if sum(bbox) != 0: # all 0's is the default in the storage array, so ignore these
             color = (0.7,0.7,0.4) #colors[int(obj.cls)]
             c1 =  (int(bbox[0]-bbox[2]/2),int(bbox[1]-bbox[3]*bbox[2]/2))
             c2 =  (int(bbox[0]+bbox[2]/2),int(bbox[1]+bbox[3]*bbox[2]/2))
@@ -269,12 +365,13 @@ def plot(im,detections,post_locations,all_classes,class_dict,frame = None):
             cv2.rectangle(im, c1, c2,color, -1)
             cv2.putText(im, label, (c1[0], c1[1] + t_size[1] + 4), cv2.FONT_HERSHEY_PLAIN,text_size, [225,255,255], 1);
     
-    
+    # resize to fit on standard monitor
     if im.shape[0] > 1920:
         im = cv2.resize(im, (1920,1080))
     cv2.imshow("window",im)
     cv2.waitKey(1)
     
+    # write output image in temp output folder if frame number is specified
     if frame is not None:
         cv2.imwrite("output/{}.png".format(str(frame).zfill(4)),im*255)
 
@@ -286,12 +383,15 @@ def iou(a,b):
 
     Parameters
     ----------
-    a : a torch of size [batch_size,4] of bounding boxes.
-    b : a torch of size [batch_size,4] of bounding boxes.
+    a : tensor of size [batch_size,4] 
+        bounding boxes
+    b : tensor of size [batch_size,4]
+        bounding boxes.
 
     Returns
     -------
-    mean_iou - float between [0,1] with average iou for a and b
+    iou - float between [0,1]
+        average iou for a and b
     """
     
     area_a = a[2] * a[2] * a[3]
@@ -309,11 +409,69 @@ def iou(a,b):
     return iou
     
     
-def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True):
-        
-    init_frames = 3
-    
-    fsld_max = det_step
+def skip_track(track_path,
+               tracker,
+               detector_resolution = 1024,
+               det_step = 1,
+               init_frames = 3,
+               fsld_max = 1,
+               matching_cutoff = 100,
+               iou_cutoff = 0.5,
+               conf_cutoff = 3,
+               srr = 0,
+               ber = 1,
+               mask_others = True,
+               PLOT = True):
+    """
+    Description
+    -----------
+    Performs detection and tracking on frames of a video stored in a directory,
+    skipping some frames and using localization rather than dense detection on 
+    these to save computational time
+
+    Parameters
+    ----------
+    track_path : str
+        file location of frames
+    tracker : Torch_KF object
+        tensor-implemented Kalman Filter, pre-initialized
+    detector_resolution : int (divisible by 32)
+        preprocessing resize of images for detector
+    det_step : int optional
+        Number of frames after which to perform full detection. The default is 1.
+    init_frames : int, optional
+        NUmber of full detection frames before beginning localization. The default is 3.
+    fsld_max : int, optional
+        Maximum dense detection frames since last detected before an object is removed. 
+        The default is 1.
+    matching_cutoff : int, optional
+        Maximum distance between first and second frame locations before match is not considered.
+        The default is 100.
+    iou_cutoff : float in range [0,1], optional
+        Max iou between two tracked objects before one is removed. The default is 0.5.
+    conf_cutoff : float, optional
+        Min confidence from localizer before object is removed. The default is 3.
+    srr : flaot in range [0,1], optional
+        Ratio of predicted scale and ratio to use, if 0, localizer scale and ratio are discarded. 
+        The default is 0.
+    ber : float, optional
+        How much bounding boxes are expanded before being fed to localizer. The default is 1.
+    mask_others : bool, optional
+        If true, other bounding boxes are masked with average value in localizer crops.
+        The default is True.
+    PLOT : bool, optional
+        If True, resulting frames are output. The default is True.
+
+    Returns
+    -------
+    final_output : list of lists, one per frame
+        Each sublist contains dicts, one per estimated object location, with fields
+        "bbox", "id", and "class_num"
+    frame_rate : float
+        number of frames divuided by total processing time
+    time_metrics : dict
+        Time utilization for each operation in tracking
+    """    
     
     # CUDA for PyTorch
     use_cuda = torch.cuda.is_available()
@@ -325,7 +483,7 @@ def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True)
         detector
         localizer
     except:
-        detector,localizer = load_models(device)
+        detector,localizer = load_models(device,yolo_resolution = detector_resolution)
         
     
     localizer.eval()
@@ -350,7 +508,6 @@ def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True)
         "detect":0,
         "parse":0,
         "match":0,
-        "match2":0,
         "update":0,
         "add and remove":0,
         "store":0,
@@ -359,7 +516,6 @@ def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True)
                 
                 
     # 3. Main Loop
-
     for (frame,dim,original_im) in frames:
         
         # 1. Move image to GPU
@@ -411,12 +567,6 @@ def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True)
             matchings = match_hungarian(pre_loc,detections[:,:4],iou_cutoff = 0.05)
             time_metrics['match'] += time.time() - start
             
-            # try:
-            #     start = time.time()
-            #     matchings2 = match_greedy(pre_loc,detections[:,:4], threshold = 200)
-            #     time_metrics['match2'] += time.time() - start
-            # except:
-            #     print("failed")
             
             # 5a. Update tracked objects
             start = time.time()
@@ -517,7 +667,7 @@ def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True)
             new_boxes[:,4] = boxes[:,1] + box_scales/2 
             torch_boxes = torch.from_numpy(new_boxes).float().to(device)
             
-            if True: # mask other bboxes
+            if mask_others: # mask other bboxes
                 # these boxes are not square
                 rect_boxes = np.zeros([len(boxes),4])
                 rect_boxes[:,0] = boxes[:,0] - boxes[:,2] / 2.0
@@ -541,7 +691,6 @@ def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True)
             # crop using roi align 
             crops = roi_align(frame_copy,torch_boxes,(224,224))
             time_metrics['pre_localize and align'] += time.time() - start
-            
             
             
             # 4b. Localize objects using localizer
@@ -600,24 +749,24 @@ def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True)
         
         
             # Low confidence removals
-            if True:
+            if conf_cutoff > 0:
                 removals = []
                 locations = tracker.objs()
                 for i in range(len(box_ids)):
-                    if highest_conf[i] < 3 and box_ids[i] in locations:
+                    if highest_conf[i] < conf_cutoff and box_ids[i] in locations:
                         removals.append(box_ids[i])
                         print("Removed low confidence object")
                 tracker.remove(removals)
         
         # IOU suppression on overlapping bounding boxes
-        if True:
+        if iou_cutoff > 0:
             removals = []
             locations = tracker.objs()
             for i in locations:
                 for j in locations:
                     if i != j:
                         iou_metric = iou(locations[i],locations[j])
-                        if iou_metric > 0.5:
+                        if iou_metric > iou_cutoff:
                             # determine which object has been around longer
                             if len(all_classes[i]) > len(all_classes[j]):
                                 removals.append(j)
@@ -642,16 +791,18 @@ def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True)
         time_metrics['plot'] += time.time() - start
    
             
-        # increment frame counter 
-        if frame_num % 1000 == 0:
-            print("Finished frame {}".format(frame_num))
+        ## increment frame counter 
+        # if frame_num % 30 == 0:
+        #     print("Finished frame {}".format(frame_num))
+        
         frame_num += 1
         torch.cuda.empty_cache()
             
     
+    # clean up at the end
     cv2.destroyAllWindows()
-    
     del frames
+    
     
     total_time = 0
     for key in time_metrics:
@@ -665,8 +816,7 @@ def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True)
             print("{:.3f}s ({:.2f}%) on {}".format(time_metrics[key],time_metrics[key]/total_time*100,key))
 
 
-    #write final output 
-        
+    #write final output   
     final_output = []
     for frame in range(n_frames):
         frame_objs = []
@@ -684,7 +834,6 @@ def skip_track(track_path, tracker, det_step = 1, srr = 0, ber = 1, PLOT = True)
                 obj_dict["bbox"] = np.array([x0,y0,x1,y1])
                 
                 frame_objs.append(obj_dict)
-        
         final_output.append(frame_objs)
         
     return final_output, n_frames/total_time, time_metrics

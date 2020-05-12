@@ -23,9 +23,22 @@ import matplotlib.pyplot as plt
 
 def parse_labels(label_file):
      """
+     Description
+     -----------
      Returns a set of metadata (1 per track) and a list of labels (1 item per
      frame, where an item is a list of dictionaries (one dictionary per object
      with fields id, class, truncation, orientation, and bbox
+     
+     Parameters
+     ----------
+     label_file : str
+         path where label xml files are stored for UA Detrac Dataset
+     
+     Returns
+     all_boxes : list of list of dicts
+        one dict per object, one list per frame
+     sequence_metadata - dict
+        info about sequence and ignored regions
      """
      
      class_dict = {
@@ -126,13 +139,29 @@ def parse_labels(label_file):
 
 def test_regions(regions,x,y):
     """
+    Description
+    -----------
     Determines whether point (x,y) falls within any of regions
+    
+    Parameters
+    ----------
+    x : float
+        x-coordinate
+    y : float
+        y-coordinate
+    regions : list of np.array [4]
+        xmin,ymin,xmax,ymax for each region
+    
+    Returns
+    -------
+    True if point is within any of the regions, False otherwise
     """
     
     for region in regions:
         if x > region[0] and x < region[2] and y > region[1] and y < region[3]:
             return True
     return False
+
 
 def evaluate_mot(preds,gts,ignored_regions = [],threshold = 100):
     """
@@ -143,16 +172,17 @@ def evaluate_mot(preds,gts,ignored_regions = [],threshold = 100):
         
     Parameters:
     ----------
-        preds - the predicted object locations and ids
-        gts   - the ground-truth object locations and ids
+        preds : the predicted object locations and ids
+        gts   : the ground-truth object locations and ids
         ** both preds and gts are expected to be of the form list[list[dict]]:
             - one outer list item per frame
             - one inner list item per object
             - dict must contain fields id, bbox (x0,y0,x1,y1), and class
-            
+        ignored_regions : list of np array [4]       
+            regions from which to remove predictions
     Returns:
     -------
-        metrics - list of MOT metrics for the tracks
+        metrics : list of MOT metrics for the tracks
     """
     
     acc = motmetrics.MOTAccumulator(auto_id = True)
