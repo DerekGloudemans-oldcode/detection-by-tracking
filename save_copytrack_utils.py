@@ -22,8 +22,8 @@ from scipy.optimize import linear_sum_assignment
 
 from detrac_files.detrac_train_localizer import ResNet_Localizer, class_dict
 from pytorch_yolo_v3.yolo_detector import Darknet_Detector
-from torch_kf_dual import Torch_KF#, filter_wrapper
-from mp_loader import FrameLoader
+from torch_kf import Torch_KF#, filter_wrapper
+
 
 def parse_detections(detections, keep = [2,3,5,7]):
     """
@@ -212,7 +212,7 @@ def load_models(
     localizer.load_state_dict(cp['model_state_dict']) 
     localizer = localizer.to(device)
     
-    #print("Detector and Localizer on {}.".format(device))
+    print("Detector and Localizer on {}.".format(device))
     return detector,localizer
     
 def load_all_frames(track_directory,det_step,init_frames,cutoff = None): 
@@ -458,15 +458,15 @@ def skip_track(track_path,
         detector
         localizer
     except:
-        loc = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain3/cpu_resnet18_epoch20.pt"
-        loc = "/home/worklab/Desktop/checkpoints/detrac_localizer_34/cpu_resnet34_epoch7.pt"
-        detector,localizer = load_models(device,yolo_resolution = detector_resolution,localizer_checkpoint = loc)
-        localizer.eval()
+        detector,localizer = load_models(device,yolo_resolution = detector_resolution)
+        
     
-    # get loader     
-    loader = FrameLoader(track_path,device,det_step,init_frames)
-    n_frames = len(loader)
+    localizer.eval()
+         
+    # Loop Setup
+    frames,n_frames = load_all_frames(track_path,det_step,init_frames,cutoff = None)
     
+    frame_num = 0               # iteration counter   
     next_obj_id = 0             # next id for a new object (incremented during tracking)
     fsld = {}                   # fsld[id] stores frames since last detected for object id
     
@@ -489,9 +489,17 @@ def skip_track(track_path,
         "plot":0
         }
                 
-    frame_num, (frame,dim,original_im) = next(loader)            
+                
     # 3. Main Loop
-    while frame_num != -1:
+    for (frame,dim,original_im) in frames:
+        
+        # 1. Move image to GPU
+        start = time.time()
+        frame = frame.to(device,non_blocking = True)
+        if frame_num % det_step < init_frames: #if frame_num % det_step == 0:
+            dim = dim.to(device,non_blocking = True)                      
+        time_metrics['gpu_load'] += time.time() - start
+        
 
         # 2. Predict next object locations
         start = time.time()
@@ -549,7 +557,7 @@ def skip_track(track_path,
                 fsld[pre_ids[a]] = 0 # fsld = 0 since this id was detected this frame
             
             if len(update_array) > 0:    
-                tracker.update2(update_array,update_ids)
+                tracker.update(update_array,update_ids)
               
                 time_metrics['update'] += time.time() - start
                   
@@ -700,7 +708,7 @@ def skip_track(track_path,
             
             #lastly, replace scale and ratio with original values 
             ## NOTE this is kind of a cludgey fix and ideally localizer should be better
-            #output[:,2:4] = srr*output[:,2:4] + (1-srr)*boxes[:,2:4] 
+            output[:,2:4] = srr*output[:,2:4] + (1-srr)*boxes[:,2:4] 
             time_metrics['post_localize'] += time.time() - start
             detections = output
 
@@ -722,7 +730,7 @@ def skip_track(track_path,
                 for i in range(len(box_ids)):
                     if highest_conf[i] < conf_cutoff and box_ids[i] in locations:
                         removals.append(box_ids[i])
-                        #print("Removed low confidence object")
+                        print("Removed low confidence object")
                 tracker.remove(removals)
         
         # IOU suppression on overlapping bounding boxes
@@ -758,15 +766,17 @@ def skip_track(track_path,
         time_metrics['plot'] += time.time() - start
    
             
-        ## increment frame counter and get next frame 
+        ## increment frame counter 
         # if frame_num % 30 == 0:
         #     print("Finished frame {}".format(frame_num))
-        frame_num , (frame,dim,original_im) = next(loader) 
+        
+        frame_num += 1
         torch.cuda.empty_cache()
             
     
     # clean up at the end
     cv2.destroyAllWindows()
+    del frames
     
     
     total_time = 0

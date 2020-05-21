@@ -45,8 +45,8 @@ class ResNet_Localizer(nn.Module):
         super(ResNet_Localizer, self).__init__()
         
         # remove last layers of vgg19 model, save first fc layer and maxpool layer
-        self.feat = models.resnet18(pretrained=True)
-
+        #self.feat = models.resnet18(pretrained=True)
+        self.feat = models.resnet34(pretrained = True)
         # get size of some layers
         start_num = self.feat.fc.out_features
         mid_num = int(np.sqrt(start_num))
@@ -192,7 +192,7 @@ def train_model(model, optimizer, scheduler,losses,
                     total_loss += sum(each_loss) #loss.item()
                     if count % 100 == 0:
                         print("{} epoch {} batch {} -- Loss so far: {:03f} -- {}".format(phase,epoch,count,total_loss/count,[item for item in each_loss]))
-                    if count % 1000 == 0:
+                    if count % 5000 == 0:
                         plot_batch(model,next(iter(dataloaders['train'])),class_dict)
                     
                     # periodically save best checkpoint
@@ -200,7 +200,7 @@ def train_model(model, optimizer, scheduler,losses,
                         avg_loss = total_loss/count
                         if avg_loss < best_loss:
                             # save a checkpoint
-                            PATH = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain2/resnet18_epoch{}_batch{}.pt".format(epoch,count)
+                            PATH = "/home/worklab/Desktop/checkpoints/detrac_localizer_34/resnet34_epoch{}_batch{}.pt".format(epoch,count)
                             torch.save({
                                 'epoch': epoch,
                                 'model_state_dict': model.state_dict(),
@@ -220,7 +220,7 @@ def train_model(model, optimizer, scheduler,losses,
 
                 if avg_loss < best_loss:
                     # save a checkpoint
-                    PATH = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain2/resnet18_epoch{}_end.pt".format(epoch)
+                    PATH = "/home/worklab/Desktop/checkpoints/detrac_localizer_34/resnet34_epoch{}_end.pt".format(epoch)
                     torch.save({
                         'epoch': epoch,
                         'model_state_dict': model.state_dict(),
@@ -414,15 +414,14 @@ class_dict = {
 if __name__ == "__main__":
     
     #checkpoint_file = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain2/try_this_one.pt"
-    checkpoint_file = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain2/resnet18_epoch14_end.pt"
+    #checkpoint_file = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain3/resnet18_epoch20_end.pt"
+    checkpoint_file = "/home/worklab/Desktop/checkpoints/detrac_localizer_34/resnet34_epoch7_end.pt"
 
-    #checkpoint_file = None
-
-    patience = 4
+    patience = 3
 
     label_dir       = "/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3"
     train_image_dir = "/home/worklab/Desktop/detrac/DETRAC-train-data"
-    test_image_dir  = "/home/worklab/Desktop/detrac/DETRAC-test-data"
+    test_image_dir  = "/home/worklab/Desktop/detrac/DETRAC-val-data"
     
     #label_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\DETRAC-Train-Annotations-XML-v3"
     #train_image_dir = "C:\\Users\\derek\\Desktop\\UA Detrac\\Tracks"
@@ -450,7 +449,7 @@ if __name__ == "__main__":
     
     
     # 3. create training params
-    params = {'batch_size' : 32,
+    params = {'batch_size' : 64,
               'shuffle'    : True,
               'num_workers': 0,
               'drop_last'  : True
@@ -473,10 +472,10 @@ if __name__ == "__main__":
     print("Got dataloaders. {},{}".format(datasizes['train'],datasizes['val']))
     
     # 5. define stochastic gradient descent optimizer    
-    optimizer = optim.SGD(model.parameters(), lr=0.1,momentum = 0.1)
+    optimizer = optim.SGD(model.parameters(), lr=0.1,momentum = 0.9)
     
     # 6. decay LR by a factor of 0.1 every 7 epochs
-    exp_lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.3)
+    exp_lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.3)
     
     # 7. define start epoch for consistent labeling if checkpoint is reloaded
     start_epoch = -1
@@ -492,9 +491,11 @@ if __name__ == "__main__":
     losses = {"cls": [nn.CrossEntropyLoss()],
               "reg": [nn.MSELoss(), Box_Loss(),]
               }
+    losses = {"cls": [],
+               "reg": [Box_Loss()]
+               }
     
-    
-    if False:    
+    if True:    
     # train model
         print("Beginning training.")
         model,all_metrics = train_model(model,

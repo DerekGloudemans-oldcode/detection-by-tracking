@@ -23,7 +23,7 @@ import torch.multiprocessing as mp
 
 class FrameLoader():
     
-    def __init__(self,track_directory,device, det_step, init_frames, PRELOAD = False):
+    def __init__(self,track_directory,device, det_step, init_frames, buffer_size = 9):
         
         """
         Parameters
@@ -58,27 +58,71 @@ class FrameLoader():
         
         self.frame_idx = 0
         
-        self.worker = ctx.Process(target=load_to_queue, args=(self.queue,files,det_step,init_frames,device,))
+        self.worker = ctx.Process(target=load_to_queue, args=(self.queue,files,det_step,init_frames,device,buffer_size,))
         self.worker.start()
         time.sleep(5)
         
     def __len__(self):
+        """
+        Description
+        -----------
+        Returns number of frames in the track directory
+        """
+        
         return len(self.files)
     
     def __next__(self):
+        """
+        Description
+        -----------
+        Returns next frame and associated data unless at end of track, in which
+        case returns -1 for frame num and None for frame
+
+        Returns
+        -------
+        frame_num : int
+            Frame index in track
+        frame : tuple of (tensor,tensor,tensor)
+            image, image dimensions and original image
+
+        """
+        
         if self.frame_idx < len(self):
             frame_num = self.frame_idx
             self.frame_idx += 1
         
-            frame = self.queue.get(timeout = 0)
+            frame = self.queue.get(timeout = 3)
             return frame_num, frame
         
         else:
             self.worker.terminate()
             self.worker.join()
-            return -1,None
+            return -1,(None,None,None)
 
-def load_to_queue(image_queue,files,det_step,init_frames,device,queue_size = 5):
+def load_to_queue(image_queue,files,det_step,init_frames,device,queue_size):
+    """
+    Description
+    -----------
+    Whenever necessary, loads images, moves them to GPU, and adds them to a shared
+    multiprocessing queue with the goal of the queue always having a certain size.
+    Process is to be called as a worker by FrameLoader object
+    
+    Parameters
+    ----------
+    image_queue : multiprocessing Queue
+        shared queue in which preprocessed images are put.
+    files : list of str
+        each str is path to one file in track directory
+    det_step : int
+        specifies number of frames between dense detections 
+    init_frames : int
+        specifies number of dense detections before localization begins
+    device : torch.device
+        Specifies whether images should be put on CPU or GPU.
+    queue_size : int, optional
+        Goal size of queue, whenever actual size is less additional images will
+        be processed and added. The default is 5.
+    """
     
     frame_idx = 0    
     while frame_idx < len(files):
@@ -99,6 +143,7 @@ def load_to_queue(image_queue,files,det_step,init_frames,device,queue_size = 5):
                   im = im.transpose((2,0,1)).copy()
                   im = torch.from_numpy(im).float().div(255.0).unsqueeze(0)
                   dim = torch.FloatTensor(dim).repeat(1,2)
+                  dim = dim.to(device,non_blocking = True)
               else:
                   # keep as tensor
                   original_im = np.array(im)[:,:,[2,1,0]].copy()
@@ -116,8 +161,14 @@ def load_to_queue(image_queue,files,det_step,init_frames,device,queue_size = 5):
              
             frame_idx += 1
     
+    # neverending loop, because if the process ends, the tensors originally
+    # initialized in this function will be deleted, causing issues. Thus, this 
+    # function runs until a call to self.next() returns -1, indicating end of track 
+    # has been reached
     while True:  
            time.sleep(5)
+        
+        
         
 if __name__ == "__main__":
     

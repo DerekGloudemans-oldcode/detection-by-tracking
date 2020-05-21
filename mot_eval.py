@@ -208,7 +208,8 @@ def evaluate_mot(preds,gts,ignored_regions = [],threshold = 100):
         # get preds in desired format
         pred = preds[frame]
         pred_ids = [] # object ids for each object in this frame
-        for obj in pred:
+        pred_idxs = [] # the index for each object in the frame, not id
+        for i,obj in enumerate(pred):
             
             #pred object center
             px = (obj["bbox"][0] + obj['bbox'][2]) /2.0
@@ -217,7 +218,9 @@ def evaluate_mot(preds,gts,ignored_regions = [],threshold = 100):
             
             if not exclude:
                 pred_ids.append(obj["id"])
+                pred_idxs.append(i)
         pred_ids = np.array(pred_ids)
+        pred_idxs = np.array(pred_idxs)
         
         # get distance matrix in desired format
         
@@ -238,20 +241,25 @@ def evaluate_mot(preds,gts,ignored_regions = [],threshold = 100):
         
         else: # use iou for matching
             dist = np.ones([len(gt_ids),len(pred_ids)])
+            ious = np.zeros([len(gt_ids),len(pred_ids)])
             for i in range(len(gt_ids)):
                 for j in range(len(pred_ids)):
-                    minx = max(gt[i]["bbox"][0],pred[j]["bbox"][0])
-                    maxx = min(gt[i]["bbox"][2],pred[j]["bbox"][2])
-                    miny = max(gt[i]["bbox"][1],pred[j]["bbox"][1])
-                    maxy = min(gt[i]["bbox"][3],pred[j]["bbox"][3])
+                    k = pred_idxs[j]
+                    minx = max(gt[i]["bbox"][0],pred[k]["bbox"][0])
+                    maxx = min(gt[i]["bbox"][2],pred[k]["bbox"][2])
+                    miny = max(gt[i]["bbox"][1],pred[k]["bbox"][1])
+                    maxy = min(gt[i]["bbox"][3],pred[k]["bbox"][3])
                     
                     intersection = max(0,maxx-minx) * max(0,maxy-miny)
                     a1 = (gt[i]["bbox"][2] - gt[i]['bbox'][0]) * (gt[i]["bbox"][3] - gt[i]['bbox'][1])
-                    a2 = (pred[j]["bbox"][2] - pred[j]['bbox'][0]) * (pred[j]["bbox"][3] - pred[j]['bbox'][1])
+                    a2 = (pred[k]["bbox"][2] - pred[k]['bbox'][0]) * (pred[k]["bbox"][3] - pred[k]['bbox'][1])
                     
                     union = a1+a2-intersection
                     iou = intersection / union
                     dist[i,j] = 1-iou
+                    ious[i,j] = iou
+                    if dist[i,j] > threshold:
+                        dist[i,j] = np.nan
             
         # if detection isn't close to any object (> threshold), remove
         # this is a cludgey fix since the detrac dataset doesn't have all of the vehicles labeled
@@ -270,6 +278,7 @@ def evaluate_mot(preds,gts,ignored_regions = [],threshold = 100):
     metric_module = motmetrics.metrics.create()
     summary = metric_module.compute(acc,metrics = ["num_frames",
                                                    "num_unique_objects",
+                                                   "num_objects",
                                                    "mota",
                                                    "motp",
                                                    "precision",

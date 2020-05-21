@@ -11,6 +11,9 @@ import numpy as np
 import time
 import random
 import _pickle as pickle
+import matplotlib.pyplot as plt
+import cv2 
+
 random.seed  = 0
 
 from detrac_files.detrac_tracking_dataset import Track_Dataset
@@ -33,7 +36,49 @@ from detrac_files.detrac_train_localizer import ResNet_Localizer, load_model, cl
 # need to report time metric for each round of evaluations
 # need to have variable batch size 
 
+       
+def test_outputs(bboxes,crops):
+    """
+    Description
+    -----------
+    Generates a plot of the bounding box predictions output by the localizer so
+    performance of this component can be visualized
+    
+    Parameters
+    ----------
+    bboxes - tensor [n,4] 
+        bounding boxes output for each crop by localizer network
+    crops - tensor [n,3,width,height] (here width and height are both 224)
+    """
+    
+    # define figure subplot grid
+    batch_size = len(crops)
+    row_size = min(batch_size,8)
+    
+    for i in range(0,len(crops)):    
+        # get image
+        im   = crops[i].data.cpu().numpy().transpose((1,2,0))
+        mean = np.array([0.485, 0.456, 0.406])
+        std  = np.array([0.229, 0.224, 0.225])
+        im   = std * im + mean
+        im   = np.clip(im, 0, 1)
+        
+        # get predictions
+        bbox = bboxes[i].data.cpu().numpy()
+        
+        wer = 3
+        imsize = 224
+        
+        # transform bbox coords back into im pixel coords
+        bbox = (bbox* imsize*wer - imsize*(wer-1)/2).astype(int)
+        # plot pred bbox
+        im = cv2.rectangle(im,(bbox[0],bbox[1]),(bbox[2],bbox[3]),(0.1,0.6,0.9),2)
+        im = im.get()
 
+        plt.imshow(im)
+        plt.pause(1)
+        
+        
 def iou(a,b):
     """
     Description
@@ -144,6 +189,8 @@ device = torch.device("cuda:0" if use_cuda else "cpu")
 torch.cuda.empty_cache() 
     
 resnet_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain2/cpu_resnet18_epoch14.pt"
+resnet_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain3/cpu_resnet18_epoch20.pt"
+
 cp = torch.load(resnet_checkpoint)
 localizer.load_state_dict(cp['model_state_dict']) 
 localizer = localizer.to(device)
@@ -179,13 +226,13 @@ kf_params = {
         "mu_R":tracker.mu_R
         }
 
-with open("filter_states/acceleration_baseline.cpkl","rb") as f:
+with open("filter_states/velocity_Q.cpkl","rb") as f:
     kf_params = pickle.load(f)
-    kf_params["mu_R"] = torch.zeros([1,4])
-    kf_params["mu_Q"] = torch.zeros([1,9])
+    #kf_params["mu_R"] = torch.zeros([1,4])
+    #kf_params["mu_Q"] = torch.zeros([1,7])
     
 # fit Q and mu_Q
-if True:
+if False:
     error_vectors = []
     for iteration in range(1000):
         
@@ -253,7 +300,7 @@ if True:
     
     
 # fit H and mu_H
-if False:
+if True:
     error_vecs = []
     
     for iteration in range(50):
@@ -285,7 +332,7 @@ if False:
             box_scales = np.min(np.stack((boxes[:,2],boxes[:,2]*boxes[:,3]),axis = 1),axis = 1) #/2.0
                 
             #expand box slightly
-            ber = 1
+            ber = 1.5
             box_scales = box_scales * ber# box expansion ratio
             
             new_boxes[:,1] = boxes[:,0] - box_scales/2
@@ -301,7 +348,7 @@ if False:
    
             cls_out,reg_out = localizer(crops)
             torch.cuda.synchronize()
-            
+            test_outputs(reg_out, crops)
 
             # 5b. convert to global image coordinates 
                 

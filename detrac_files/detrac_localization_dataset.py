@@ -62,7 +62,7 @@ class Localize_Dataset(data.Dataset):
                 transforms.RandomErasing(p=0.2, scale=(0.02, 0.07), ratio=(0.3, 3.3), value=(0.485,0.456,0.406)),
                 transforms.RandomErasing(p=0.2, scale=(0.02, 0.05), ratio=(0.3, 3.3), value=(0.485,0.456,0.406)),
                 transforms.RandomErasing(p=0.1, scale=(0.02, 0.15), ratio=(0.3, 3.3), value=(0.485,0.456,0.406)),
-                transforms.RandomErasing(p=0.2, scale=(0.02, 0.1), ratio=(0.3, 3.3), value=(0.485,0.456,0.406)),
+                transforms.RandomErasing(p=0.1, scale=(0.02, 0.2), ratio=(0.3, 3.3), value=(0.485,0.456,0.406)),
 
                 transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])
@@ -129,7 +129,7 @@ class Localize_Dataset(data.Dataset):
         # copy so that original coordinates aren't overwritten
         bbox = label["bbox"].copy()
         
-        
+        bbox_width = bbox[2] - bbox[0]
                 
         # flip sometimes
         if np.random.rand() > 0.5:
@@ -138,14 +138,14 @@ class Localize_Dataset(data.Dataset):
             bbox[[2,0]] = im.size[0] - bbox[[0,2]]
         
         # randomly shift the center of the crop
-        shift_scale = 150
+        shift_scale = 90
         x_shift = np.random.normal(0,im.size[0]/shift_scale)
         y_shift = np.random.normal(0,im.size[1]/shift_scale)
         #x_shift = 0
         #y_shift = 0
         
         #buffer  = 0#min(bbox[2]-bbox[0],bbox[3]-bbox[1])/3# max(-5,np.random.normal(70,im.size[1]/shift_scale))
-        bufferx = max(0,np.random.normal(5,10))
+        bufferx = max(0,np.random.normal(bbox_width/4.0,10))
         buffery = max(0,bufferx*(np.random.rand()+0.5))
         # note may have indexed these wrongly
         minx = max(0,bbox[0]-bufferx)
@@ -183,7 +183,7 @@ class Localize_Dataset(data.Dataset):
         y[0:4] = bbox
         y[4] = label["class_num"]
         
-        im_crop,y = self.random_affine_crop(im_crop,y)
+        #im_crop,y = self.random_affine_crop(im_crop,y)
 
         
         
