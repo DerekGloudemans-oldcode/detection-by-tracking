@@ -82,6 +82,14 @@ def plot_bboxes_2d(im,label,ignored_regions = []):
             (0,255,50),
             (0,100,255),
             (0,50,255),
+            (255,150,0),
+            (255,100,0),
+            (255,50,0),
+            (0,255,150),
+            (0,255,100),
+            (0,255,50),
+            (0,100,255),
+            (0,50,255),
             (200,200,200) #ignored regions
             ]
     
@@ -108,6 +116,11 @@ class_dict = {
         'Taxi':5,
         'Bus':6,
         'Truck-Box-Large':7,
+        'MiniVan':8,
+        'Truck-Box-Med':9,
+        'Truck-Util':10,
+        'Truck-Pickup':11,
+        'Truck-Flatbed':12,
         
         0:'Sedan',
         1:'Hatchback',
@@ -116,5 +129,10 @@ class_dict = {
         4:'Police',
         5:'Taxi',
         6:'Bus',
-        7:'Truck-Box-Large'     
+        7:'Truck-Box-Large',
+        8:'MiniVan',
+        9:'Truck-Box-Med',
+        10:'Truck-Util',
+        11:'Truck-Pickup',
+        12:'Truck-Flatbed'
         }

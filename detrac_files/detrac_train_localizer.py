@@ -495,7 +495,7 @@ if __name__ == "__main__":
                "reg": [Box_Loss()]
                }
     
-    if True:    
+    if False:    
     # train model
         print("Beginning training.")
         model,all_metrics = train_model(model,
@@ -508,10 +508,39 @@ if __name__ == "__main__":
                             start_epoch = start_epoch+1,
                             all_metrics = all_metrics)
         
-    # try plotting
-    batch = next(iter(dataloaders['val']))
-    plot_batch(model,batch,class_dict)
+    if True:
+        model.eval()
+        error_list = []
+        for i in range(0,5000):
+            print("On batch {}".format(i))
+            i += 1
+            
+            data, label = next(iter(trainloader))
+            wer = 3
+            cls_out,reg_out = model(data.to(device))
+            reg_out = (reg_out* 224*wer - 224*(wer-1)/2).int()
+    
+            pred = reg_out.data.cpu()
+            
+            # convert pred and labels to xysr  
+            new_pred = torch.zeros(pred.shape)
+            new_pred[:,0] = (pred[:,0] + pred[:,2]) / 2.0
+            new_pred[:,1] = (pred[:,1] + pred[:,3]) / 2.0
+            new_pred[:,2] = (pred[:,2] - pred[:,0])
+            new_pred[:,3] = (pred[:,3] - pred[:,1]) / new_pred[:,2]
+            
+            new_label = torch.zeros(pred.shape)
+            new_label[:,0] = (label[:,0] + label[:,2]) / 2.0
+            new_label[:,1] = (label[:,1] + label[:,3]) / 2.0
+            new_label[:,2] = (label[:,2] - label[:,0])
+            new_label[:,3] = (label[:,3] - label[:,1]) / label[:,2]
+       
+            error = torch.mean((new_label - new_pred),dim = 0)
+            error_list.append(error)
         
-    
-    
-   
+        mean = torch.stack(error_list).mean(dim = 0)
+        
+        covariance = torch.zeros((4,4))
+        for vec in error_list:
+            covariance += torch.mm((vec - mean).unsqueeze(1), (vec-mean).unsqueeze(1).transpose(0,1))
+        covariance = covariance / (len(error_list) - 1)

@@ -22,7 +22,7 @@ import xml.etree.ElementTree as ET
 try:
     from detrac_files.detrac_plot_utils_copy import pil_to_cv, plot_bboxes_2d
 except:
-    from detrac_plot_utils_copy import pil_to_cv, plot_bboxes_2d
+    from detrac_plot_utils_copy import pil_to_cv, plot_bboxes_2d, class_dict
 
 
 class Track_Dataset(data.Dataset):
@@ -58,7 +58,7 @@ class Track_Dataset(data.Dataset):
         # parse and store all labels and image names in a list such that
         # all_data[i] returns dict with image name, label and other stats
         # track_offsets[i] retuns index of first frame of track[i[]]
-        for i in  range(0,2): #range(0,len(track_list)):
+        for i in  range(0,len(track_list)):
 
             images = [os.path.join(track_list[i],frame) for frame in os.listdir(track_list[i])]
             images.sort() 
@@ -287,7 +287,7 @@ class Track_Dataset(data.Dataset):
                 cv_im = plot_bboxes_2d(cv_im,label,metadata['ignored_regions'])
                 
             cv2.imshow("Frame",cv_im)
-            key = cv2.waitKey(0) & 0xff
+            key = cv2.waitKey(1) & 0xff
             #time.sleep(1/30.0)
             
             if key == ord('q'):
@@ -308,6 +308,6 @@ if __name__ == "__main__":
     label_dir = "/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3"
     image_dir = "/home/worklab/Desktop/detrac/DETRAC-all-data"
     test = Track_Dataset(image_dir,label_dir)
-    test.plot(0)
-    temp = test[0]
+    #test.plot(54)
+    #temp = test[0]
 

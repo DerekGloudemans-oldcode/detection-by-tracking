@@ -56,6 +56,22 @@ def parse_labels(label_file):
          'Truck-Pickup':11,
          'Truck-Flatbed':12,
          
+         'car':0,
+         'sedan':0,
+         'hatchback':1,
+         'suv':2,
+         'van':3,
+         'police':4,
+         'taxi':5,
+         'bus':6,
+         'truck-box-large':7,
+         'minivan':8,
+         'truck-box-med':9,
+         'truck-util':10,
+         'truck-pickup':11,
+         'truck-flatbed':12,
+         'others':12,
+         
          0:'Sedan',
          1:'Hatchback',
          2:'Suv',
@@ -121,11 +137,14 @@ def parse_labels(label_file):
                      'id':int(boxid.attrib['id']),
                      'class':stats['vehicle_type'],
                      'class_num':class_dict[stats['vehicle_type']],
-                     'color':stats['color'],
                      'orientation':float(stats['orientation']),
                      'truncation':float(stats['truncation_ratio']),
                      'bbox':bbox
                      }
+             try:
+                 det_dict['color'] = stats['color']
+             except:
+                 pass
              
              frame_boxes.append(det_dict)
          all_boxes.append(frame_boxes)
@@ -162,8 +181,43 @@ def test_regions(regions,x,y):
             return True
     return False
 
+def test_regions_fraction(regions,bbox,cutoff = 0.5):
+    """
+    Description
+    -----------
+    Determines whether a bbox overlaps with any of regions by above threshold
+    
+    Parameters
+    ----------
+    regions : list of np.array [4]
+        xmin,ymin,xmax,ymax for each region
+    bbox : np array [4]
+        xmin ymin xmax ymax
+    cutoff : float in range [0.1], optional
+        overlap cutoff to consider boox in the ignore region. The default is 0.5.
 
-def evaluate_mot(preds,gts,ignored_regions = [],threshold = 100):
+    Returns
+    -------
+    True if bbox overlaps with any region by threshold or more, False otherwise.
+    """
+    
+    for region in regions:
+        # calculate iou
+        area = (bbox[2] - bbox[0])     * (bbox[3] - bbox[1])
+        
+        xmin = max(region[0],bbox[0])
+        xmax = min(region[2],bbox[2])
+        ymin = max(region[1],bbox[1])
+        ymax = min(region[3],bbox[3])
+        intersection = max(0,(xmax - xmin)) * max(0,(ymax - ymin))
+        overlap = intersection  / area
+        
+        if overlap > cutoff:
+            return True
+    
+    return False
+
+def evaluate_mot(preds,gts,ignored_regions = [],threshold = 100,ignore_threshold = 0.5):
     """
     Description:
     -----------
@@ -186,9 +240,11 @@ def evaluate_mot(preds,gts,ignored_regions = [],threshold = 100):
     """
     
     acc = motmetrics.MOTAccumulator(auto_id = True)
-    
-    assert len(preds) == len(gts) , "Length of predictions and ground truths are not equal: {},{}".format(len(preds),len(gts))
-         
+    try:
+        assert len(preds) == len(gts) , "Length of predictions and ground truths are not equal: {},{}".format(len(preds),len(gts))
+    except AssertionError:
+        while len(preds) > len(gts):
+            gts.append([])
 
     for frame in range(len(gts)):
         # get gts in desired format
@@ -212,9 +268,11 @@ def evaluate_mot(preds,gts,ignored_regions = [],threshold = 100):
         for i,obj in enumerate(pred):
             
             #pred object center
-            px = (obj["bbox"][0] + obj['bbox'][2]) /2.0
-            py = (obj["bbox"][1] + obj['bbox'][3]) /2.0
-            exclude = test_regions(ignored_regions,px,py)
+            #px = (obj["bbox"][0] + obj['bbox'][2]) /2.0
+            #py = (obj["bbox"][1] + obj['bbox'][3]) /2.0
+            #exclude = test_regions(ignored_regions,px,py)
+            
+            exclude = test_regions_fraction(ignored_regions,obj['bbox'], cutoff = ignore_threshold)
             
             if not exclude:
                 pred_ids.append(obj["id"])

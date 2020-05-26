@@ -66,13 +66,13 @@ class Torch_KF(object):
             
         # use INIT matrices to initialize filter    
         else:
-            self.P0 = INIT["P"].unsqueeze(0)
+            self.P0 = INIT["P"].unsqueeze(0) 
             self.F  = INIT["F"]
             self.H  = INIT["H"]
             self.Q  = INIT["Q"].unsqueeze(0)
-            self.R  = INIT["R"].unsqueeze(0)
-            #self.R[0,2,2] *= 500 # increase uncertainty in localizer scale
-            self.R2  = INIT["R2"].unsqueeze(0) * 0
+            self.R  = INIT["R"].unsqueeze(0) 
+            #self.R[0,2,2] *= 100 # increase uncertainty in localizer scale
+            self.R2  = INIT["R2"].unsqueeze(0)  
             self.mu_Q = INIT["mu_Q"].unsqueeze(0) 
             self.mu_R = INIT["mu_R"].unsqueeze(0)
             self.mu_R2 = INIT["mu_R2"].unsqueeze(0)

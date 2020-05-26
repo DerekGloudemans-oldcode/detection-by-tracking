@@ -100,7 +100,11 @@ def match_hungarian(first,second,dist_threshold = 50):
     for i in range(0,len(first)):
         for j in range(0,len(second)):
             dist[i,j] = np.sqrt((first[i,0]-second[j,0])**2 + (first[i,1]-second[j,1])**2)
-    a, b = linear_sum_assignment(dist)
+    try:
+        a, b = linear_sum_assignment(dist)
+    except ValueError:
+        print(dist,first,second)
+        raise Exception
     
     # convert into expected form
     matchings = np.zeros(len(first))-1
@@ -110,9 +114,12 @@ def match_hungarian(first,second,dist_threshold = 50):
     
     # remove any matches too far away
     for i in range(len(matchings)):
-        if dist[i,matchings[i]] > dist_threshold:
-            matchings[i] = -1
-    
+        try:
+            if dist[i,matchings[i]] > dist_threshold:
+                matchings[i] = -1
+        except:
+            pass
+        
     # write into final form
     out_matchings = []
     for i in range(len(matchings)):
@@ -240,7 +247,7 @@ def load_all_frames(track_directory,det_step,init_frames,cutoff = None):
         Number of frames
     """
     
-    print("Loading frames into memory.")
+    #print("Loading frames into memory.")
     files = []
     frames = []
     for item in [os.path.join(track_directory,im) for im in os.listdir(track_directory)]:
@@ -277,7 +284,7 @@ def load_all_frames(track_directory,det_step,init_frames,cutoff = None):
              
     n_frames = len(frames)
      
-    print("All frames loaded into memory")
+    #print("All frames loaded into memory")
     return frames,n_frames
         
 def plot(im,detections,post_locations,all_classes,class_dict,frame = None):
@@ -491,12 +498,11 @@ def skip_track(track_path,
                 
     frame_num, (frame,dim,original_im) = next(loader)            
     # 3. Main Loop
-    while frame_num != -1:
-
+    while frame_num != -1:            
+        
         # 2. Predict next object locations
         start = time.time()
         try: # in the case that there are no active objects will throw exception
-
             tracker.predict()
             pre_locations = tracker.objs()
         except:
@@ -505,6 +511,16 @@ def skip_track(track_path,
     
        
         if frame_num % det_step < init_frames: #Use YOLO
+            
+            if dim == None:
+                print("Dimension Mismatch")
+                dim = (frame.shape[1], frame.shape[0])
+                frame = cv2.resize(frame, (1024,1024))
+                frame = frame.transpose((2,0,1)).copy()
+                frame = torch.from_numpy(frame).float().div(255.0).unsqueeze(0)
+                dim = torch.FloatTensor(dim).repeat(1,2)
+                dim = dim.to(device,non_blocking = True)
+                
             # 3a. YOLO detect                            
             detections = detector.detect2(frame,dim)
             torch.cuda.synchronize(device)
@@ -741,7 +757,18 @@ def skip_track(track_path,
                                 removals.append(i)
             removals = list(set(removals))
             tracker.remove(removals)
-            
+        
+        # trim large and negative boxes
+        removals = []
+        max_scale = 400
+        locations = tracker.objs()
+        for i in locations:
+            if locations[i][2] > max_scale or locations[i][2] < 0:
+                removals.append(i)
+            elif locations[i][2] * locations[i][3] > max_scale or locations [i][2] * locations[i][3] < 0:
+                removals.append(i)
+        tracker.remove(removals)
+        
             
         # 9. Get all object locations and store in output dict
         start = time.time()
@@ -759,11 +786,11 @@ def skip_track(track_path,
    
             
         ## increment frame counter and get next frame 
-        # if frame_num % 30 == 0:
-        #     print("Finished frame {}".format(frame_num))
+        # if frame_num % 1 == 0:
+        #      print("Finished frame {}".format(frame_num))
         frame_num , (frame,dim,original_im) = next(loader) 
         torch.cuda.empty_cache()
-            
+        
     
     # clean up at the end
     cv2.destroyAllWindows()
