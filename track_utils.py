@@ -515,12 +515,12 @@ def skip_track(track_path,
             if dim == None:
                 print("Dimension Mismatch")
                 dim = (frame.shape[1], frame.shape[0])
-                frame = cv2.resize(frame, (1024,1024))
-                frame = frame.transpose((2,0,1)).copy()
-                frame = torch.from_numpy(frame).float().div(255.0).unsqueeze(0)
+                frame = frame.float().div(255.0).unsqueeze(0)
+                frame = torch.nn.functional.interpolate(frame,(1024,1024),mode = "bilinear")
                 dim = torch.FloatTensor(dim).repeat(1,2)
                 dim = dim.to(device,non_blocking = True)
-                
+            
+            torch.cuda.empty_cache()
             # 3a. YOLO detect                            
             detections = detector.detect2(frame,dim)
             torch.cuda.synchronize(device)
@@ -679,6 +679,8 @@ def skip_track(track_path,
             # 4b. Localize objects using localizer
             start= time.time()
             cls_out,reg_out = localizer(crops)
+            del crops
+            torch.cuda.empty_cache()
             torch.cuda.synchronize()
             time_metrics['localize'] += time.time() - start
             
@@ -716,7 +718,7 @@ def skip_track(track_path,
             
             #lastly, replace scale and ratio with original values 
             ## NOTE this is kind of a cludgey fix and ideally localizer should be better
-            #output[:,2:4] = srr*output[:,2:4] + (1-srr)*boxes[:,2:4] 
+            output[:,2:4] = srr*output[:,2:4] + (1-srr)*boxes[:,2:4] 
             time_metrics['post_localize'] += time.time() - start
             detections = output
 
@@ -786,7 +788,7 @@ def skip_track(track_path,
    
             
         ## increment frame counter and get next frame 
-        # if frame_num % 1 == 0:
+        #if frame_num % 1 == 0:
         #      print("Finished frame {}".format(frame_num))
         frame_num , (frame,dim,original_im) = next(loader) 
         torch.cuda.empty_cache()
@@ -834,4 +836,4 @@ def skip_track(track_path,
 
 if __name__ == "__main__":
     tracker = Torch_KF("cpu",mod_err = 10, meas_err = 1, state_err = 1)
-    final_output,frame_rate,time_metrics = skip_track("/home/worklab/Desktop/detrac/DETRAC-all-data/MVI_20011",tracker,det_step = 5)
+    final_output,frame_rate,time_metrics = skip_track("/home/worklab/Desktop/detrac/DETRAC-all-data/MVI_20011",tracker,det_step = 15,init_frames = 1,PLOT = False)

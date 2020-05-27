@@ -23,7 +23,7 @@ import torch.multiprocessing as mp
 
 class FrameLoader():
     
-    def __init__(self,track_directory,device, det_step, init_frames, buffer_size = 10):
+    def __init__(self,track_directory,device, det_step, init_frames, buffer_size = 1):
         
         """
         Parameters
@@ -56,7 +56,7 @@ class FrameLoader():
         ctx = mp.get_context('spawn')
         self.queue = ctx.Queue()
         
-        self.frame_idx = 0
+        self.frame_idx = -1
         
         self.worker = ctx.Process(target=load_to_queue, args=(self.queue,files,det_step,init_frames,device,buffer_size,))
         self.worker.start()
@@ -87,12 +87,12 @@ class FrameLoader():
 
         """
         
-        if self.frame_idx < len(self):
-            frame_num = self.frame_idx
-            self.frame_idx += 1
+        if self.frame_idx < len(self) -1:
         
             frame = self.queue.get(timeout = 3)
-            return frame_num, frame
+            self.frame_idx = frame[0]
+            frame = frame[1:]
+            return self.frame_idx, frame
         
         else:
             self.worker.terminate()
@@ -154,7 +154,7 @@ def load_to_queue(image_queue,files,det_step,init_frames,device,queue_size):
                  
               # store preprocessed image, dimensions and original image
               im = im.to(device)
-              frame = (im,dim,original_im)
+              frame = (frame_idx,im,dim,original_im)
              
               # append to queue
               image_queue.put(frame)

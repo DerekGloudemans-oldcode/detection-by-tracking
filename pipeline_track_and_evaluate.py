@@ -25,12 +25,13 @@ if __name__ == "__main__":
         overlap = 0.2
         conf_cutoff = 3
         iou_cutoff = 0.75
-        det_step = 8
-        srr = 0
+        det_step = 15
+        srr = 1
         ber = 1.95
         init_frames = 1
         matching_cutoff = 100
-        mask_others = True
+        mask_others = False
+        TEST = True
         
         #tracks = [40243,20011,20012,63562,63563]
         tracks = [63525,20012,20034,63544,63552,63553,63554,63561,63562,63563]
@@ -43,8 +44,9 @@ if __name__ == "__main__":
         track_dir = "/home/worklab/Desktop/detrac/DETRAC-all-data"
         label_dir = "/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3"
         
-        track_dir = "/home/worklab/Desktop/detrac/DETRAC-test-data"
-        label_dir = "/home/worklab/Desktop/detrac/DETRAC-Test-Annotations-XML"
+        if TEST:
+            track_dir = "/home/worklab/Desktop/detrac/DETRAC-test-data"
+            label_dir = "/home/worklab/Desktop/detrac/DETRAC-Test-Annotations-XML"
         track_list = [os.path.join(track_dir,item) for item in os.listdir(track_dir)]  
         label_list = [os.path.join(label_dir,item) for item in os.listdir(label_dir)] 
         track_dict = {}
@@ -53,16 +55,20 @@ if __name__ == "__main__":
             track_dict[id] = {"frames": item,
                               "labels": None}
         for item in label_list:
-            #   id = int(item.split("MVI_")[-1].split("_v3.xml")[0])
-            id = int(item.split("MVI_")[-1].split(".xml")[0])
+            if TEST:
+                id = int(item.split("MVI_")[-1].split(".xml")[0])
+            else:
+                id = int(item.split("MVI_")[-1].split("_v3.xml")[0])
+            
             track_dict[id]['labels'] = item
         
         running_metrics = {}
         
-        tracks = [key for key in track_dict]
-        tracks.reverse()
+        if TEST:
+            tracks = [key for key in track_dict]
+            tracks.sort()
         # for each track and for specified det_step, track and evaluate
-        for id in tracks[6:]:
+        for id in tracks:
             # # track
             #with open("velocity_fitted_Q.cpkl", 'rb') as f:
             #with open("filter_states/velocity_Q_R_dual.cpkl", 'rb') as f:
@@ -94,7 +100,10 @@ if __name__ == "__main__":
             metrics,acc = mot.evaluate_mot(preds,gts,ignored_regions,threshold = 0.3,ignore_threshold = overlap)
             metrics = metrics.to_dict()
             metrics["framerate"] = {0:Hz}
-            print(metrics["mota"])
+            print(metrics["mota"],metrics["framerate"])
+            
+            with open("results_{}_{}.cpkl".format(id,det_step),"wb") as f:
+                pickle.dump(metrics,f)
             
             # add results to aggregate results
             try:
