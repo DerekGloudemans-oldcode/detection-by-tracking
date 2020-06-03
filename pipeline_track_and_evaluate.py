@@ -21,17 +21,18 @@ from torch_kf_dual import Torch_KF#, filter_wrapper
 
 
 if __name__ == "__main__":
+    #for det_step in [40,30,25,20,15,10,7,5,3]:    
         # input parameters
         overlap = 0.2
         conf_cutoff = 3
         iou_cutoff = 0.75
-        det_step = 15
+        det_step = 7
         srr = 1
         ber = 1.95
         init_frames = 1
         matching_cutoff = 100
-        mask_others = False
-        TEST = True
+        mask_others = True
+        TEST = False
         
         #tracks = [40243,20011,20012,63562,63563]
         tracks = [63525,20012,20034,63544,63552,63553,63554,63561,63562,63563]
@@ -103,7 +104,7 @@ if __name__ == "__main__":
             print(metrics["mota"],metrics["framerate"])
             
             with open("results_{}_{}.cpkl".format(id,det_step),"wb") as f:
-                pickle.dump(metrics,f)
+                pickle.dump((preds,metrics),f)
             
             # add results to aggregate results
             try:

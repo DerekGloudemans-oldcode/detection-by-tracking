@@ -612,9 +612,8 @@ def skip_track(track_path,
             
             time_metrics['add and remove'] += time.time() - start
 
-
             
-        elif True: # use Resnet  
+        elif True or (frame_num % det_step < 2 or (frame_num %det_step) % 2 == 1): # use Resnet  
             # 3b. crop tracked objects from image
             start = time.time()
             # use predicted states to crop relevant portions of frame 
@@ -673,6 +672,7 @@ def skip_track(track_path,
                 frame_copy = frame.unsqueeze(0)
             # crop using roi align 
             crops = roi_align(frame_copy,torch_boxes,(224,224))
+            del frame_copy
             time_metrics['pre_localize and align'] += time.time() - start
             
             

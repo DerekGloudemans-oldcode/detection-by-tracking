@@ -192,8 +192,8 @@ resnet_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain2
 resnet_checkpoint = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain3/cpu_resnet18_epoch20.pt"
 
 cp = torch.load(resnet_checkpoint)
-localizer.load_state_dict(cp['model_state_dict']) 
-localizer = localizer.to(device)
+#localizer.load_state_dict(cp['model_state_dict']) 
+#localizer = localizer.to(device)
 
 try:
     loader
@@ -216,25 +216,25 @@ except:
 
 # create initial values for each matrix
 tracker = Torch_KF("cpu",INIT = None)
-kf_params = {
-        "P":tracker.P0.squeeze(0),
-        "Q":tracker.Q.squeeze(0),
-        "R":tracker.R.squeeze(0),
-        "F":tracker.F,
-        "H":tracker.H,
-        "mu_Q":tracker.mu_Q,
-        "mu_R":tracker.mu_R
-        }
+# kf_params = {
+#         "P":tracker.P0.squeeze(0),
+#         "Q":tracker.Q.squeeze(0),
+#         "R":tracker.R.squeeze(0),
+#         "F":tracker.F,
+#         "H":tracker.H,
+#         "mu_Q":tracker.mu_Q,
+#         "mu_R":tracker.mu_R
+#         }
 
-with open("filter_states/velocity_Q.cpkl","rb") as f:
+with open("filter_states/velocity_Q_R_rdot.cpkl","rb") as f:
     kf_params = pickle.load(f)
     #kf_params["mu_R"] = torch.zeros([1,4])
     #kf_params["mu_Q"] = torch.zeros([1,7])
     
 # fit Q and mu_Q
-if False:
+if True:
     error_vectors = []
-    for iteration in range(1000):
+    for iteration in range(3000):
         
         # grab batch
         batch, ims = next(iter(loader))
@@ -270,10 +270,10 @@ if False:
             pos_next = batch[:,frame+1,:]
             
             vel = ( (pos_next - pos) + (pos - pos_prev) ) / 2.0
-            gt = torch.cat((pos, vel[:,:3]),dim = 1)
+            gt = torch.cat((pos, vel[:,:4]),dim = 1)
             
             
-            if True:
+            if False:
                 pos2_prev = batch[:,frame-2,:]
                 prev_vel = ( (pos-pos_prev) + (pos_prev - pos2_prev) ) / 2.0
                 acc = (vel - prev_vel)[:,:2]
@@ -288,19 +288,19 @@ if False:
     error_vectors = torch.stack(error_vectors,dim = 0)
     mean = torch.mean(error_vectors, dim = 0)
     
-    covariance = torch.zeros((9,9))
+    covariance = torch.zeros((8,8))
     for vec in error_vectors:
         covariance += torch.mm((vec - mean).unsqueeze(1), (vec-mean).unsqueeze(1).transpose(0,1))
         
     kf_params["mu_Q"] = mean
     kf_params["Q"] = covariance
     
-    with open("filter_states/acceleration_Q.cpkl","wb") as f:
+    with open("filter_states/velocity_Q_R_rdot.cpkl","wb") as f:
         pickle.dump(kf_params,f)
     
     
 # fit H and mu_H
-if True:
+if False:
     error_vecs = []
     
     for iteration in range(50):
