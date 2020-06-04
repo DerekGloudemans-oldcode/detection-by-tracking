@@ -21,29 +21,31 @@ from torch_kf_dual import Torch_KF#, filter_wrapper
 
 
 if __name__ == "__main__":
-    #for det_step in [40,30,25,20,15,10,7,5,3]:    
+    #for matching_cutoff in [0.4,0.45,0.5,0.55,0.6,0.65,0.7,0.8]:    
         # input parameters
         overlap = 0.2
         conf_cutoff = 3
         iou_cutoff = 0.75
-        det_step = 7
+        det_step = 30
         srr = 1
         ber = 1.95
         init_frames = 1
+        # matching_cutoff = 0.4 
         matching_cutoff = 100
-        mask_others = True
+        mask_others = False
         TEST = False
         
         #tracks = [40243,20011,20012,63562,63563]
         tracks = [63525,20012,20034,63544,63552,63553,63554,63561,63562,63563]
         #tracks = [20034,63525]
         #tracks = [20012]
-        # tracks = [63563]
+        #tracks = [63552]
         SHOW = False
         
         # get list of all files in directory and corresponding path to track and labels
         track_dir = "/home/worklab/Desktop/detrac/DETRAC-all-data"
         label_dir = "/home/worklab/Desktop/detrac/DETRAC-Train-Annotations-XML-v3"
+        
         
         if TEST:
             track_dir = "/home/worklab/Desktop/detrac/DETRAC-test-data"
@@ -72,13 +74,15 @@ if __name__ == "__main__":
         for id in tracks:
             # # track
             #with open("velocity_fitted_Q.cpkl", 'rb') as f:
-            #with open("filter_states/velocity_Q_R_dual.cpkl", 'rb') as f:
+            #with open("filter_states/velocity_Q_R_rdot.cpkl", 'rb') as f:
             with open("filter_states/velocity_Q_R_dual_34.cpkl" ,"rb") as f:
             # #with open("filter_states/acceleration_Q.cpkl",'rb') as f:
                  kf_params = pickle.load(f)
             
             tracker = Torch_KF("cpu",mod_err = 1, meas_err = 1, state_err = 0, INIT =kf_params)
             frames = track_dict[id]["frames"]
+            
+            frames = "/home/worklab/Desktop/I-24 samples/cam_1"
             preds, Hz, time_metrics = track_utils.skip_track(frames,
                                                               tracker,
                                                               detector_resolution = 1024,
@@ -115,7 +119,7 @@ if __name__ == "__main__":
                     running_metrics[key] = metrics[key][0]
                     
         # average results  
-        print("\n\nAverage Metrics for {} tracks with det_step {}:".format(len(tracks),det_step))    
+        print("\n\nAverage Metrics for {} tracks with iou cutoff {}:".format(len(tracks),matching_cutoff))
         for key in running_metrics:
             running_metrics[key] /= len(tracks)
             print("   {}: {}".format(key,running_metrics[key]))

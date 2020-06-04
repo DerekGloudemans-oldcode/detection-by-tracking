@@ -96,10 +96,17 @@ def match_hungarian(first,second,dist_threshold = 50):
     
     """
     # find distances between first and second
-    dist = np.zeros([len(first),len(second)])
-    for i in range(0,len(first)):
-        for j in range(0,len(second)):
-            dist[i,j] = np.sqrt((first[i,0]-second[j,0])**2 + (first[i,1]-second[j,1])**2)
+    if True:
+        dist = np.zeros([len(first),len(second)])
+        for i in range(0,len(first)):
+            for j in range(0,len(second)):
+                dist[i,j] = np.sqrt((first[i,0]-second[j,0])**2 + (first[i,1]-second[j,1])**2)
+    else:
+        dist = np.zeros([len(first),len(second)])
+        for i in range(0,len(first)):
+            for j in range(0,len(second)):
+                dist[i,j] = 1 - iou(first[i],second[j].data.numpy())
+            
     try:
         a, b = linear_sum_assignment(dist)
     except ValueError:
@@ -482,7 +489,7 @@ def skip_track(track_path,
     
     # for keeping track of what's using up time
     time_metrics = {            
-        "gpu_load":0,
+        "load":0,
         "predict":0,
         "pre_localize and align":0,
         "localize":0,
@@ -512,6 +519,7 @@ def skip_track(track_path,
        
         if frame_num % det_step < init_frames: #Use YOLO
             
+            start = time.time()
             if dim == None:
                 print("Dimension Mismatch")
                 dim = (frame.shape[1], frame.shape[0])
@@ -519,8 +527,8 @@ def skip_track(track_path,
                 frame = torch.nn.functional.interpolate(frame,(1024,1024),mode = "bilinear")
                 dim = torch.FloatTensor(dim).repeat(1,2)
                 dim = dim.to(device,non_blocking = True)
-            
-            torch.cuda.empty_cache()
+                torch.cuda.empty_cache()
+                
             # 3a. YOLO detect                            
             detections = detector.detect2(frame,dim)
             torch.cuda.synchronize(device)
@@ -528,7 +536,7 @@ def skip_track(track_path,
             
             start = time.time()
             detections = detections.cpu()
-            time_metrics['gpu_load'] += time.time() - start
+            time_metrics['load'] += time.time() - start
 
             
             # postprocess detections
@@ -788,9 +796,13 @@ def skip_track(track_path,
    
             
         ## increment frame counter and get next frame 
-        #if frame_num % 1 == 0:
-        #      print("Finished frame {}".format(frame_num))
+        # if frame_num % 1 == 0:
+        #       print("Finished frame {}".format(frame_num))
+              
+        start = time.time()
         frame_num , (frame,dim,original_im) = next(loader) 
+        torch.cuda.synchronize()
+        time_metrics["load"] = time.time() - start
         torch.cuda.empty_cache()
         
     

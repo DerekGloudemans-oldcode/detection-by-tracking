@@ -8,6 +8,7 @@ import os
 import numpy as np
 import random 
 import math
+import time
 random.seed = 0
 
 import cv2
@@ -508,7 +509,7 @@ if __name__ == "__main__":
                             start_epoch = start_epoch+1,
                             all_metrics = all_metrics)
         
-    if True:
+    if False:
         model.eval()
         error_list = []
         for i in range(0,5000):
@@ -544,3 +545,41 @@ if __name__ == "__main__":
         for vec in error_list:
             covariance += torch.mm((vec - mean).unsqueeze(1), (vec-mean).unsqueeze(1).transpose(0,1))
         covariance = covariance / (len(error_list) - 1)
+        
+    
+    #benchmark speed
+    if False:
+        
+        model.eval()
+        #batch_sizes = []
+        #fps = []
+        #batch_time = []
+        
+        for batch_size in range (100,300,8):
+            params = {'batch_size' : batch_size,
+              'shuffle'    : True,
+              'num_workers': 0,
+              'drop_last'  : True
+              }
+            trainloader = data.DataLoader(train_data, **params)
+            
+            total_time = 0
+            for i in range(100):
+                batch = next(iter(trainloader))[0].to(device)
+                
+                start = time.time()
+                out = model(batch)
+                torch.cuda.synchronize()
+                elapsed = time.time() - start
+                total_time += elapsed
+            
+            print("{} ims in {} sec, {} fps, {} per batch".format(100*batch_size,total_time, 100*batch_size/total_time,total_time/100))
+       
+        batch_sizes.append(batch_size)
+        fps.append(100*batch_size/total_time)
+        batch_time.append(total_time/100)
+        
+        torch.cuda.empty_cache()
+        
+        plt.figure()
+        plt.plot(batch_sizes,)

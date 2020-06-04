@@ -23,7 +23,7 @@ import torch.multiprocessing as mp
 
 class FrameLoader():
     
-    def __init__(self,track_directory,device, det_step, init_frames, buffer_size = 1):
+    def __init__(self,track_directory,device, det_step, init_frames, buffer_size = 9):
         
         """
         Parameters
