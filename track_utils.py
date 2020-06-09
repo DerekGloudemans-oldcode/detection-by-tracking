@@ -621,7 +621,7 @@ def skip_track(track_path,
             time_metrics['add and remove'] += time.time() - start
 
             
-        elif True or (frame_num % det_step < 2 or (frame_num %det_step) % 2 == 1): # use Resnet  
+        elif False or ((frame_num %det_step) % 2 == 1): # use Resnet  
             # 3b. crop tracked objects from image
             start = time.time()
             # use predicted states to crop relevant portions of frame 
@@ -667,7 +667,7 @@ def skip_track(track_path,
                 rect_boxes = rect_boxes.astype(int)
                 frame_copy = frame.clone()
                 for rec in rect_boxes:
-                    frame_copy[:,rec[1]:rec[3],rec[0]:rec[2]] = 0
+                    frame_copy[:,rec[1]:rec[3],rec[0]:rec[2]] = 0 ####################################333
                 frame_copy = frame_copy.unsqueeze(0).repeat(len(boxes),1,1,1)
                 
                 # in each crop, replace active box with correct pixels
@@ -687,15 +687,17 @@ def skip_track(track_path,
             # 4b. Localize objects using localizer
             start= time.time()
             cls_out,reg_out = localizer(crops)
+            
+            if  False:
+                test_outputs(reg_out,crops)
+                time.sleep(5)
+                
             del crops
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
             time_metrics['localize'] += time.time() - start
-            
             start = time.time()
-            if  False:
-                test_outputs(reg_out,crops)
-            
+
             # store class predictions
             highest_conf,cls_preds = torch.max(cls_out,1)
             for i in range(len(cls_preds)):
@@ -824,6 +826,14 @@ def skip_track(track_path,
 
     #write final output   
     final_output = []
+    
+    all_speeds[]
+    for id in all_tracks:
+        obj = all_tracks[id]
+        speed = np.mean(np.sqrt(obj[:,4]**2 + obj[:,5]**2))
+        all_speeds.append(speed)
+    avg_speed = sum(all_speeds)/len(all_speeds)
+    
     for frame in range(n_frames):
         frame_objs = []
         
@@ -842,7 +852,7 @@ def skip_track(track_path,
                 frame_objs.append(obj_dict)
         final_output.append(frame_objs)
         
-    return final_output, n_frames/total_time, time_metrics
+    return final_output, n_frames/total_time, time_metrics,avg_speed
 
 
 

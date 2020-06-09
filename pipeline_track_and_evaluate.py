@@ -21,12 +21,12 @@ from torch_kf_dual import Torch_KF#, filter_wrapper
 
 
 if __name__ == "__main__":
-    #for matching_cutoff in [0.4,0.45,0.5,0.55,0.6,0.65,0.7,0.8]:    
+    for det_step in [40,30,20,14,8,4,2,1]: 
         # input parameters
         overlap = 0.2
         conf_cutoff = 3
         iou_cutoff = 0.75
-        det_step = 30
+        det_step = 15
         srr = 1
         ber = 1.95
         init_frames = 1
@@ -36,7 +36,7 @@ if __name__ == "__main__":
         TEST = False
         
         #tracks = [40243,20011,20012,63562,63563]
-        tracks = [63525,20012,20034,63544,63552,63553,63554,63561,63562,63563]
+        tracks = [20012,63525,20034,63544,63552,63553,63554,63561,63562,63563]
         #tracks = [20034,63525]
         #tracks = [20012]
         #tracks = [63552]
@@ -51,7 +51,7 @@ if __name__ == "__main__":
             track_dir = "/home/worklab/Desktop/detrac/DETRAC-test-data"
             label_dir = "/home/worklab/Desktop/detrac/DETRAC-Test-Annotations-XML"
         track_list = [os.path.join(track_dir,item) for item in os.listdir(track_dir)]  
-        label_list = [os.path.join(label_dir,item) for item in os.listdir(label_dir)] 
+        label_list = [os.path.join(label_dir,item) for item in os.listdir(label_dir)]
         track_dict = {}
         for item in track_list:
             id = int(item.split("MVI_")[-1])
@@ -82,8 +82,8 @@ if __name__ == "__main__":
             tracker = Torch_KF("cpu",mod_err = 1, meas_err = 1, state_err = 0, INIT =kf_params)
             frames = track_dict[id]["frames"]
             
-            frames = "/home/worklab/Desktop/I-24 samples/cam_1"
-            preds, Hz, time_metrics = track_utils.skip_track(frames,
+            #frames = "/home/worklab/Desktop/I-24 samples/cam_1"
+            preds, Hz, time_metrics,avg_speed = track_utils.skip_track(frames,
                                                               tracker,
                                                               detector_resolution = 1024,
                                                               det_step = det_step,

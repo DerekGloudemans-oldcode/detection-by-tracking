@@ -11,3 +11,5 @@ output/
 temp_results/
 
 results_no_mask/
+
+*.cpkl
