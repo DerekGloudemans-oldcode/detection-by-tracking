@@ -21,12 +21,12 @@ from torch_kf_dual import Torch_KF#, filter_wrapper
 
 
 if __name__ == "__main__":
-    for det_step in [40,30,20,14,8,4,2,1]: 
+    for det_step in [20,14,8]: 
         # input parameters
         overlap = 0.2
         conf_cutoff = 3
         iou_cutoff = 0.75
-        det_step = 15
+        #det_step = 15
         srr = 1
         ber = 1.95
         init_frames = 1
@@ -37,6 +37,7 @@ if __name__ == "__main__":
         
         #tracks = [40243,20011,20012,63562,63563]
         tracks = [20012,63525,20034,63544,63552,63553,63554,63561,63562,63563]
+        #tracks = [20032,20062,39761,39811,39851,40141,40213,40241,40732,40871,40963,40992,63521] # these ones are from training set
         #tracks = [20034,63525]
         #tracks = [20012]
         #tracks = [63552]
@@ -105,10 +106,10 @@ if __name__ == "__main__":
             metrics,acc = mot.evaluate_mot(preds,gts,ignored_regions,threshold = 0.3,ignore_threshold = overlap)
             metrics = metrics.to_dict()
             metrics["framerate"] = {0:Hz}
-            print(metrics["mota"],metrics["framerate"])
+            print(metrics["mota"],metrics["framerate"],avg_speed)
             
             with open("results_{}_{}.cpkl".format(id,det_step),"wb") as f:
-                pickle.dump((preds,metrics),f)
+                pickle.dump((preds,metrics,avg_speed),f)
             
             # add results to aggregate results
             try:
@@ -119,7 +120,7 @@ if __name__ == "__main__":
                     running_metrics[key] = metrics[key][0]
                     
         # average results  
-        print("\n\nAverage Metrics for {} tracks with iou cutoff {}:".format(len(tracks),matching_cutoff))
+        print("\n\nAverage Metrics for {} tracks with det_step {}:".format(len(tracks),det_step))
         for key in running_metrics:
             running_metrics[key] /= len(tracks)
             print("   {}: {}".format(key,running_metrics[key]))

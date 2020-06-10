@@ -487,6 +487,7 @@ def skip_track(track_path,
     all_tracks = {}             # stores states for each object
     all_classes = {}            # stores class evidence for each object
     
+    
     # for keeping track of what's using up time
     time_metrics = {            
         "load":0,
@@ -517,7 +518,7 @@ def skip_track(track_path,
         time_metrics['predict'] += time.time() - start
     
        
-        if frame_num % det_step < init_frames: #Use YOLO
+        if frame_num % det_step < init_frames or frame.shape[-1] == 1024: #Use YOLO, second piece is to catch misloaded frames after det_step changes
             
             start = time.time()
             if dim == None:
@@ -786,7 +787,11 @@ def skip_track(track_path,
         start = time.time()
         post_locations = tracker.objs()
         for id in post_locations:
-            all_tracks[id][frame_num,:] = post_locations[id][:7]        
+            all_tracks[id][frame_num,:] = post_locations[id][:7]   
+            
+            
+
+            
         time_metrics['store'] += time.time() - start  
         
         
@@ -797,10 +802,25 @@ def skip_track(track_path,
         time_metrics['plot'] += time.time() - start
    
             
-        ## increment frame counter and get next frame 
+        # # increment frame counter and get next frame 
         # if frame_num % 1 == 0:
         #       print("Finished frame {}".format(frame_num))
-              
+        
+        if True and frame_num == 99:
+            all_speeds = []
+            for id in all_tracks:
+                obj = all_tracks[id]
+                speed = np.mean(np.sqrt(obj[:,4]**2 + obj[:,5]**2))
+                all_speeds.append(speed)
+            avg_speed = sum(all_speeds)/len(all_speeds)
+            if avg_speed < 1:
+                det_step = 50
+                loader.det_step = 50
+            elif avg_speed > 2:
+                det_step = 4
+                loader.det_step = 4
+            print("Avg speed: {} --switched det_step to {}".format(avg_speed,det_step))
+            
         start = time.time()
         frame_num , (frame,dim,original_im) = next(loader) 
         torch.cuda.synchronize()
@@ -827,7 +847,7 @@ def skip_track(track_path,
     #write final output   
     final_output = []
     
-    all_speeds[]
+    all_speeds = []
     for id in all_tracks:
         obj = all_tracks[id]
         speed = np.mean(np.sqrt(obj[:,4]**2 + obj[:,5]**2))
