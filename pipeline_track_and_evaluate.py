@@ -21,7 +21,7 @@ from torch_kf_dual import Torch_KF#, filter_wrapper
 
 
 if __name__ == "__main__":
-    for det_step in [20,14,8]: 
+    for det_step in [4]: 
         # input parameters
         overlap = 0.2
         conf_cutoff = 3
@@ -84,7 +84,7 @@ if __name__ == "__main__":
             frames = track_dict[id]["frames"]
             
             #frames = "/home/worklab/Desktop/I-24 samples/cam_1"
-            preds, Hz, time_metrics,avg_speed = track_utils.skip_track(frames,
+            preds, Hz, time_metrics,avg_speed = track_utils.skip_track_adaptive(frames,
                                                               tracker,
                                                               detector_resolution = 1024,
                                                               det_step = det_step,

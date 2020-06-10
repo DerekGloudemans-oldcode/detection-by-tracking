@@ -47,7 +47,11 @@ class FrameLoader():
             files.sort()    
         
         self.files = files
-        self.det_step = det_step
+        
+        manager = mp.Manager()
+        self.det_step = manager.Value("i",det_step)
+        
+        #self.det_step = det_step
         self.init_frames = init_frames
         self.device = device
     
@@ -58,7 +62,7 @@ class FrameLoader():
         
         self.frame_idx = -1
         
-        self.worker = ctx.Process(target=load_to_queue, args=(self.queue,files,det_step,init_frames,device,buffer_size,))
+        self.worker = ctx.Process(target=load_to_queue, args=(self.queue,files,self.det_step,init_frames,device,buffer_size,))
         self.worker.start()
         time.sleep(5)
         
@@ -132,7 +136,7 @@ def load_to_queue(image_queue,files,det_step,init_frames,device,queue_size):
             # load next image
             with Image.open(files[frame_idx]) as im:
              
-              if frame_idx % det_step < init_frames:   
+              if frame_idx % det_step.value < init_frames:   
                   # convert to CV2 style image
                   open_cv_image = np.array(im) 
                   im = open_cv_image.copy() 

@@ -518,7 +518,483 @@ def skip_track(track_path,
         time_metrics['predict'] += time.time() - start
     
        
-        if frame_num % det_step < init_frames or frame.shape[-1] == 1024: #Use YOLO, second piece is to catch misloaded frames after det_step changes
+        if frame_num % det_step < init_frames:# or frame.shape[-1] == 1024: #Use YOLO, second piece is to catch misloaded frames after det_step changes
+            
+            start = time.time()
+            if dim == None:
+                print("Dimension Mismatch")
+                dim = (frame.shape[1], frame.shape[0])
+                frame = frame.float().div(255.0).unsqueeze(0)
+                frame = torch.nn.functional.interpolate(frame,(1024,1024),mode = "bilinear")
+                dim = torch.FloatTensor(dim).repeat(1,2)
+                dim = dim.to(device,non_blocking = True)
+                torch.cuda.empty_cache()
+                
+            # 3a. YOLO detect                            
+            detections = detector.detect2(frame,dim)
+            torch.cuda.synchronize(device)
+            time_metrics['detect'] += time.time() - start
+            
+            start = time.time()
+            detections = detections.cpu()
+            time_metrics['load'] += time.time() - start
+
+            
+            # postprocess detections
+            start = time.time()
+            detections = parse_detections(detections)
+            time_metrics['parse'] += time.time() - start
+         
+            # 4a. Match, using Hungarian Algorithm        
+            start = time.time()
+            
+            pre_ids = []
+            pre_loc = []
+            for id in pre_locations:
+                pre_ids.append(id)
+                pre_loc.append(pre_locations[id])
+            pre_loc = np.array(pre_loc)
+            
+            # matchings[i] = [a,b] where a is index of pre_loc and b is index of detection
+            matchings = match_hungarian(pre_loc,detections[:,:4],dist_threshold = matching_cutoff)
+            time_metrics['match'] += time.time() - start
+            
+            
+            # 5a. Update tracked objects
+            start = time.time()
+    
+            update_array = np.zeros([len(matchings),4])
+            update_ids = []
+            for i in range(len(matchings)):
+                a = matchings[i,0] # index of pre_loc
+                b = matchings[i,1] # index of detections
+               
+                update_array[i,:] = detections[b,:4]
+                update_ids.append(pre_ids[a])
+                fsld[pre_ids[a]] = 0 # fsld = 0 since this id was detected this frame
+            
+            if len(update_array) > 0:    
+                tracker.update2(update_array,update_ids)
+              
+                time_metrics['update'] += time.time() - start
+                  
+            
+            # 6a. For each detection not in matchings, add a new object
+            start = time.time()
+            
+            new_array = np.zeros([len(detections) - len(matchings),4])
+            new_ids = []
+            cur_row = 0
+            for i in range(len(detections)):
+                if len(matchings) == 0 or i not in matchings[:,1]:
+                    
+                    new_ids.append(next_obj_id)
+                    new_array[cur_row,:] = detections[i,:4]
+    
+                    fsld[next_obj_id] = 0
+                    all_tracks[next_obj_id] = np.zeros([n_frames,7])
+                    all_classes[next_obj_id] = np.zeros(13)
+                    
+                    next_obj_id += 1
+                    cur_row += 1
+           
+            if len(new_array) > 0:        
+                tracker.add(new_array,new_ids)
+            
+            
+            # 7a. For each untracked object, increment fsld        
+            for i in range(len(pre_ids)):
+                try:
+                    if i not in matchings[:,0]:
+                        fsld[pre_ids[i]] += 1
+                except:
+                    fsld[pre_ids[i]] += 1
+            
+            # 8a. remove lost objects
+            removals = []
+            for id in pre_ids:
+                if fsld[id] > fsld_max:
+                    removals.append(id)
+           
+            if len(removals) > 0:
+                tracker.remove(removals)    
+            
+            time_metrics['add and remove'] += time.time() - start
+
+            
+        elif False or ((frame_num %det_step) % 2 == 1): # use Resnet  
+            # 3b. crop tracked objects from image
+            start = time.time()
+            # use predicted states to crop relevant portions of frame 
+            box_ids = []
+            box_list = []
+            
+            # convert to array
+            for id in pre_locations:
+                box_ids.append(id)
+                box_list.append(pre_locations[id][:4])
+            boxes = np.array(box_list)
+            
+            if boxes.shape[0] == 0: # no objects, so everything following is skipped
+                frame_num += 1
+                torch.cuda.empty_cache()
+                continue
+                
+            
+            # convert xysr boxes into xmin xmax ymin ymax
+            # first row of zeros is batch index (batch is size 0) for ROI align
+            new_boxes = np.zeros([len(boxes),5]) 
+
+            # use either s or s x r for both dimensions, whichever is larger,so crop is square
+            #box_scales = np.max(np.stack((boxes[:,2],boxes[:,2]*boxes[:,3]),axis = 1),axis = 1)
+            box_scales = np.min(np.stack((boxes[:,2],boxes[:,2]*boxes[:,3]),axis = 1),axis = 1) #/2.0
+                
+            #expand box slightly
+            box_scales = box_scales * ber# box expansion ratio
+            
+            new_boxes[:,1] = boxes[:,0] - box_scales/2
+            new_boxes[:,3] = boxes[:,0] + box_scales/2 
+            new_boxes[:,2] = boxes[:,1] - box_scales/2 
+            new_boxes[:,4] = boxes[:,1] + box_scales/2 
+            torch_boxes = torch.from_numpy(new_boxes).float().to(device)
+            
+            if mask_others: # mask other bboxes
+                # these boxes are not square
+                rect_boxes = np.zeros([len(boxes),4])
+                rect_boxes[:,0] = boxes[:,0] - boxes[:,2] / 2.0
+                rect_boxes[:,1] = boxes[:,1] - boxes[:,2] * boxes[:,3] / 2.0 
+                rect_boxes[:,2] = boxes[:,0] + boxes[:,2] / 2.0
+                rect_boxes[:,3] = boxes[:,1] + boxes[:,2] * boxes[:,3] / 2.0 
+                rect_boxes = rect_boxes.astype(int)
+                frame_copy = frame.clone()
+                for rec in rect_boxes:
+                    frame_copy[:,rec[1]:rec[3],rec[0]:rec[2]] = 0 ####################################333
+                frame_copy = frame_copy.unsqueeze(0).repeat(len(boxes),1,1,1)
+                
+                # in each crop, replace active box with correct pixels
+                for i in range(len(rect_boxes)):
+                    torch_boxes[i,0] = i # so images are indexed correctly
+                    rec = rect_boxes[i]
+                    frame_copy[i,:,rec[1]:rec[3],rec[0]:rec[2]] = frame[:,rec[1]:rec[3],rec[0]:rec[2]]
+            
+            else:
+                frame_copy = frame.unsqueeze(0)
+            # crop using roi align 
+            crops = roi_align(frame_copy,torch_boxes,(224,224))
+            del frame_copy
+            time_metrics['pre_localize and align'] += time.time() - start
+            
+            
+            # 4b. Localize objects using localizer
+            start= time.time()
+            cls_out,reg_out = localizer(crops)
+            
+            if  False:
+                test_outputs(reg_out,crops)
+                time.sleep(5)
+                
+            del crops
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            time_metrics['localize'] += time.time() - start
+            start = time.time()
+
+            # store class predictions
+            highest_conf,cls_preds = torch.max(cls_out,1)
+            for i in range(len(cls_preds)):
+                all_classes[box_ids[i]][cls_preds[i].item()] += 1
+            
+            
+            # 5b. convert to global image coordinates 
+                
+            # these detections are relative to crops - convert to global image coords
+            wer = 3 # window expansion ratio, was set during training
+            
+            detections = (reg_out* 224*wer - 224*(wer-1)/2)
+            detections = detections.data.cpu()
+            
+            # add in original box offsets and scale outputs by original box scales
+            detections[:,0] = detections[:,0]*box_scales/224 + new_boxes[:,1]
+            detections[:,2] = detections[:,2]*box_scales/224 + new_boxes[:,1]
+            detections[:,1] = detections[:,1]*box_scales/224 + new_boxes[:,2]
+            detections[:,3] = detections[:,3]*box_scales/224 + new_boxes[:,2]
+
+            # convert into xysr form 
+            output = np.zeros([len(detections),4])
+            output[:,0] = (detections[:,0] + detections[:,2]) / 2.0
+            output[:,1] = (detections[:,1] + detections[:,3]) / 2.0
+            output[:,2] = (detections[:,2] - detections[:,0])
+            output[:,3] = (detections[:,3] - detections[:,1]) / output[:,2]
+            
+            
+            #lastly, replace scale and ratio with original values 
+            ## NOTE this is kind of a cludgey fix and ideally localizer should be better
+            output[:,2:4] = srr*output[:,2:4] + (1-srr)*boxes[:,2:4] 
+            time_metrics['post_localize'] += time.time() - start
+            detections = output
+
+            # 6b. Update tracker
+            start = time.time()
+            # map regressed bboxes directly to objects for update step
+            tracker.update(output,box_ids)
+            time_metrics['update'] += time.time() - start
+            
+            # 7b. increment all fslds
+            for i in range(len(pre_ids)):
+                    fsld[pre_ids[i]] += 1
+        
+        
+            # Low confidence removals
+            if conf_cutoff > 0:
+                removals = []
+                locations = tracker.objs()
+                for i in range(len(box_ids)):
+                    if highest_conf[i] < conf_cutoff and box_ids[i] in locations:
+                        removals.append(box_ids[i])
+                        #print("Removed low confidence object")
+                tracker.remove(removals)
+        
+        # IOU suppression on overlapping bounding boxes
+        if iou_cutoff > 0:
+            removals = []
+            locations = tracker.objs()
+            for i in locations:
+                for j in locations:
+                    if i != j:
+                        iou_metric = iou(locations[i],locations[j])
+                        if iou_metric > iou_cutoff:
+                            # determine which object has been around longer
+                            if len(all_classes[i]) > len(all_classes[j]):
+                                removals.append(j)
+                            else:
+                                removals.append(i)
+            removals = list(set(removals))
+            tracker.remove(removals)
+        
+        # trim large and negative boxes
+        removals = []
+        max_scale = 400
+        locations = tracker.objs()
+        for i in locations:
+            if locations[i][2] > max_scale or locations[i][2] < 0:
+                removals.append(i)
+            elif locations[i][2] * locations[i][3] > max_scale or locations [i][2] * locations[i][3] < 0:
+                removals.append(i)
+        tracker.remove(removals)
+        
+            
+        # 9. Get all object locations and store in output dict
+        start = time.time()
+        post_locations = tracker.objs()
+        for id in post_locations:
+            all_tracks[id][frame_num,:] = post_locations[id][:7]   
+            
+            
+
+            
+        time_metrics['store'] += time.time() - start  
+        
+        
+        # 10. Plot
+        start = time.time()
+        if PLOT:
+            plot(original_im,detections,post_locations,all_classes,class_dict,frame = frame_num)
+        time_metrics['plot'] += time.time() - start
+   
+            
+        # # increment frame counter and get next frame 
+        # if frame_num % 1 == 0:
+        #       print("Finished frame {}".format(frame_num))
+        
+        # if True and frame_num == 99:
+        #     all_speeds = []
+        #     for id in all_tracks:
+        #         obj = all_tracks[id]
+        #         speed = np.mean(np.sqrt(obj[:,4]**2 + obj[:,5]**2))
+        #         all_speeds.append(speed)
+        #     avg_speed = sum(all_speeds)/len(all_speeds)
+        #     if avg_speed < 1:
+        #         det_step = 50
+        #         loader.det_step = 50
+        #     elif avg_speed > 2:
+        #         det_step = 4
+        #         loader.det_step = 4
+        #     print("Avg speed: {} --switched det_step to {}".format(avg_speed,det_step))
+            
+        start = time.time()
+        frame_num , (frame,dim,original_im) = next(loader) 
+        torch.cuda.synchronize()
+        time_metrics["load"] = time.time() - start
+        torch.cuda.empty_cache()
+        
+    
+    # clean up at the end
+    cv2.destroyAllWindows()
+    
+    
+    total_time = 0
+    for key in time_metrics:
+        total_time += time_metrics[key]
+    
+    if False:
+        print("Finished file {} for det_step {}".format(track_path,det_step))
+        print("\n\nTotal Framerate: {:.2f} fps".format(n_frames/total_time))
+        print("---------- per operation ----------")
+        for key in time_metrics:
+            print("{:.3f}s ({:.2f}%) on {}".format(time_metrics[key],time_metrics[key]/total_time*100,key))
+
+
+    #write final output   
+    final_output = []
+    
+    all_speeds = []
+    for id in all_tracks:
+        obj = all_tracks[id]
+        speed = np.mean(np.sqrt(obj[:,4]**2 + obj[:,5]**2))
+        all_speeds.append(speed)
+    avg_speed = sum(all_speeds)/len(all_speeds)
+    
+    for frame in range(n_frames):
+        frame_objs = []
+        
+        for id in all_tracks:
+            bbox = all_tracks[id][frame]
+            if bbox[0] != 0:
+                obj_dict = {}
+                obj_dict["id"] = id
+                obj_dict["class_num"] = np.argmax(all_classes[id])
+                x0 = bbox[0] - bbox[2]/2.0
+                x1 = bbox[0] + bbox[2]/2.0
+                y0 = bbox[1] - bbox[2]*bbox[3]/2.0
+                y1 = bbox[1] + bbox[2]*bbox[3]/2.0
+                obj_dict["bbox"] = np.array([x0,y0,x1,y1])
+                
+                frame_objs.append(obj_dict)
+        final_output.append(frame_objs)
+        
+    return final_output, n_frames/total_time, time_metrics,avg_speed
+
+def skip_track_adaptive(track_path,
+               tracker,
+               detector_resolution = 1024,
+               det_step = 1,
+               init_frames = 3,
+               fsld_max = 1,
+               matching_cutoff = 100,
+               iou_cutoff = 0.5,
+               conf_cutoff = 3,
+               srr = 0,
+               ber = 1,
+               mask_others = True,
+               PLOT = True):
+    """
+    Description
+    -----------
+    Performs detection and tracking on frames of a video stored in a directory,
+    skipping some frames and using localization rather than dense detection on 
+    these to save computational time
+
+    Parameters
+    ----------
+    track_path : str
+        file location of frames
+    tracker : Torch_KF object
+        tensor-implemented Kalman Filter, pre-initialized
+    detector_resolution : int (divisible by 32)
+        preprocessing resize of images for detector
+    det_step : int optional
+        Number of frames after which to perform full detection. The default is 1.
+    init_frames : int, optional
+        NUmber of full detection frames before beginning localization. The default is 3.
+    fsld_max : int, optional
+        Maximum dense detection frames since last detected before an object is removed. 
+        The default is 1.
+    matching_cutoff : int, optional
+        Maximum distance between first and second frame locations before match is not considered.
+        The default is 100.
+    iou_cutoff : float in range [0,1], optional
+        Max iou between two tracked objects before one is removed. The default is 0.5.
+    conf_cutoff : float, optional
+        Min confidence from localizer before object is removed. The default is 3.
+    srr : flaot in range [0,1], optional
+        Ratio of predicted scale and ratio to use, if 0, localizer scale and ratio are discarded. 
+        The default is 0.
+    ber : float, optional
+        How much bounding boxes are expanded before being fed to localizer. The default is 1.
+    mask_others : bool, optional
+        If true, other bounding boxes are masked with average value in localizer crops.
+        The default is True.
+    PLOT : bool, optional
+        If True, resulting frames are output. The default is True.
+
+    Returns
+    -------
+    final_output : list of lists, one per frame
+        Each sublist contains dicts, one per estimated object location, with fields
+        "bbox", "id", and "class_num"
+    frame_rate : float
+        number of frames divuided by total processing time
+    time_metrics : dict
+        Time utilization for each operation in tracking
+    """    
+    
+    # CUDA for PyTorch
+    use_cuda = torch.cuda.is_available()
+    device = torch.device("cuda:0" if use_cuda else "cpu")
+    torch.cuda.empty_cache() 
+            
+    # get CNNs
+    try:
+        detector
+        localizer
+    except:
+        loc = "/home/worklab/Desktop/checkpoints/detrac_localizer_retrain3/cpu_resnet18_epoch20.pt"
+        loc = "/home/worklab/Desktop/checkpoints/detrac_localizer_34/cpu_resnet34_epoch7.pt"
+        detector,localizer = load_models(device,yolo_resolution = detector_resolution,localizer_checkpoint = loc)
+        localizer.eval()
+    
+    # get loader     
+    loader = FrameLoader(track_path,device,det_step,init_frames)
+    n_frames = len(loader)
+    
+    next_obj_id = 0             # next id for a new object (incremented during tracking)
+    fsld = {}                   # fsld[id] stores frames since last detected for object id
+    
+    all_tracks = {}             # stores states for each object
+    all_classes = {}            # stores class evidence for each object
+    
+    
+    # for keeping track of what's using up time
+    time_metrics = {            
+        "load":0,
+        "predict":0,
+        "pre_localize and align":0,
+        "localize":0,
+        "post_localize":0,
+        "detect":0,
+        "parse":0,
+        "match":0,
+        "update":0,
+        "add and remove":0,
+        "store":0,
+        "plot":0
+        }
+                
+    frame_num, (frame,dim,original_im) = next(loader)            
+    # 3. Main Loop
+    while frame_num != -1:            
+        
+        # 2. Predict next object locations
+        start = time.time()
+        try: # in the case that there are no active objects will throw exception
+            tracker.predict()
+            pre_locations = tracker.objs()
+        except:
+            pre_locations = []    
+        time_metrics['predict'] += time.time() - start
+    
+       
+        if  frame.shape[-1] == 1024: #Use YOLO
             
             start = time.time()
             if dim == None:
@@ -815,10 +1291,10 @@ def skip_track(track_path,
             avg_speed = sum(all_speeds)/len(all_speeds)
             if avg_speed < 1:
                 det_step = 50
-                loader.det_step = 50
-            elif avg_speed > 2:
-                det_step = 4
-                loader.det_step = 4
+                loader.det_step.value = 50
+            elif avg_speed < 2:
+                det_step = 8
+                loader.det_step.value = 4
             print("Avg speed: {} --switched det_step to {}".format(avg_speed,det_step))
             
         start = time.time()
@@ -873,6 +1349,9 @@ def skip_track(track_path,
         final_output.append(frame_objs)
         
     return final_output, n_frames/total_time, time_metrics,avg_speed
+
+
+
 
 
 
