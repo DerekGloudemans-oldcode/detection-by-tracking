@@ -886,6 +886,7 @@ def skip_track_adaptive(track_path,
                srr = 0,
                ber = 1,
                mask_others = True,
+               speed_cutoff = 0.5,
                PLOT = True):
     """
     Description
@@ -1282,20 +1283,20 @@ def skip_track_adaptive(track_path,
         # if frame_num % 1 == 0:
         #       print("Finished frame {}".format(frame_num))
         
-        if True and frame_num == 99:
+        if True and frame_num == 149:
             all_speeds = []
             for id in all_tracks:
                 obj = all_tracks[id]
                 speed = np.mean(np.sqrt(obj[:,4]**2 + obj[:,5]**2))
                 all_speeds.append(speed)
             avg_speed = sum(all_speeds)/len(all_speeds)
-            if avg_speed < 1:
-                det_step = 50
-                loader.det_step.value = 50
-            elif avg_speed < 2:
-                det_step = 8
-                loader.det_step.value = 4
-            print("Avg speed: {} --switched det_step to {}".format(avg_speed,det_step))
+            if avg_speed < speed_cutoff:
+                det_step = 40
+                loader.det_step.value = 40
+            # elif avg_speed < 2:
+            #     det_step = 4
+            #     loader.det_step.value = 4
+            # print("Avg speed: {} --switched det_step to {}".format(avg_speed,det_step))
             
         start = time.time()
         frame_num , (frame,dim,original_im) = next(loader) 
