@@ -27,7 +27,6 @@ for file in os.listdir(results_directory):
         results = pickle.load(f)
         metrics = results[1]
         det_step = int(file.split("_")[-1].split(".cpkl")[0])
-        
         try:
             aggregator[det_step]
         except:
@@ -75,6 +74,7 @@ for det_step in range(0,50):
         easy_motas.append(easy_aggregator[det_step]["mota"]/30)
         easy_framerates.append(easy_aggregator[det_step]["framerate"]/30)
 
+metrics_list = aggregator
 
 # second set of results
   
@@ -180,32 +180,35 @@ for det_step in range(0,50):
     
 ####################### PLOT ####################################    
 plt.figure(figsize = (5,5))    
-plt.plot(framerates,motas)
+plt.plot(framerates,motas,marker = 'o')
 for i in range(len(det_steps)):
-    plt.annotate(det_steps[i],(framerates[i],motas[i]),fontsize = 10)
+    plt.annotate(det_steps[i],(framerates[i]+0.25,motas[i]),fontsize = 25)
 
 # plt.plot(easy_framerates,easy_motas)
 # for i in range(len(easy_det_steps)):
 #     plt.annotate(easy_det_steps[i],(easy_framerates[i],easy_motas[i]),fontsize = 5)
 
-plt.plot(framerates_2,motas_2)
+plt.plot(framerates_2,motas_2,marker = 'o')
 for i in range(len(det_steps_2)):
-    plt.annotate(det_steps_2[i],(framerates_2[i],motas_2[i]),fontsize = 10)
+    plt.annotate(det_steps_2[i],(framerates_2[i]+0.25,motas_2[i]),fontsize = 25)
 
-plt.plot(framerates_3,motas_3)
+plt.plot(framerates_3,motas_3,marker = 'o')
 for i in range(len(det_steps_3)):
-    plt.annotate(det_steps_3[i],(framerates_3[i],motas_3[i]),fontsize = 10)
+    plt.annotate(det_steps_3[i],(framerates_3[i]+0.25,motas_3[i]),fontsize = 25)
 
-plt.plot(framerates_4,motas_4)
-for i in range(len(det_steps_4)):
-    plt.annotate(det_steps_4[i],(framerates_4[i],motas_4[i]),fontsize = 10)
+#plt.plot(framerates_4,motas_4)
+#for i in range(len(det_steps_4)):
+#    plt.annotate(det_steps_4[i],(framerates_4[i],motas_4[i]),fontsize = 10)
 
 
-plt.legend(["Localize Only","Filter Only","Alternate Filter and Localize","Adaptive"],fontsize = 20)
-plt.xlim([0,55])
-plt.ylim([0.1,0.6])
-plt.xticks(fontsize=20)
-plt.yticks(fontsize=20)
-plt.xlabel("Framerate (fps)",fontsize = 20)
-plt.ylabel("Accuracy (MOTA)",fontsize = 20)
-plt.title("Accuracy versus Framerate", fontsize = 24)
+plt.legend(["Tracking By Localization","Frame Skipping","Alternate localization and Frame Skipping","Adaptive"],fontsize = 30)
+plt.xlim([0,50])
+plt.ylim([0.0,0.5])
+plt.xticks(fontsize=30)
+plt.yticks(fontsize=30)
+plt.xlabel("Framerate (fps)",fontsize = 40)
+plt.ylabel("Accuracy (MOTA)",fontsize = 40)
+#plt.title("Accuracy versus Framerate", fontsize =)
+
+
+
