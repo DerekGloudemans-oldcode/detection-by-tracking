@@ -13,3 +13,7 @@ temp_results/
 results_no_mask/
 
 *.cpkl
+
+detrac_format/
+
+detrac_format_15/
