@@ -255,28 +255,3 @@ plt.ylabel("Accuracy (MOTA)",fontsize = 40)
 
 
 
-
-plt.figure(figsize = (5,5))    
-
-
-plt.plot(easy_framerates,easy_motas, marker = "o")
-for i in range(len(easy_det_steps)):
-    plt.annotate(easy_det_steps[i],(easy_framerates[i],easy_motas[i]),fontsize = 25)
-    
-plt.plot(medium_framerates,medium_motas, marker = "o")
-for i in range(len(medium_det_steps)):
-    plt.annotate(medium_det_steps[i],(medium_framerates[i],medium_motas[i]),fontsize = 25)
-
-plt.plot(hard_framerates,hard_motas, marker = "o")
-for i in range(len(hard_det_steps)):
-    plt.annotate(hard_det_steps[i],(hard_framerates[i],hard_motas[i]),fontsize = 25)
-
-
-plt.legend(["Easy Sequences", "Moderate Sequences", "Hard Sequences"],fontsize = 30)
-plt.xlim([0,50])
-plt.ylim([0.0,0.5])
-plt.xticks(fontsize=30)
-plt.yticks(fontsize=30)
-plt.xlabel("Framerate (fps)",fontsize = 40)
-plt.ylabel("Accuracy (MOTA)",fontsize = 40)
-#plt.title("Accuracy versus Framerate", fontsize =)
